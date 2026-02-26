@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, Activity, RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, Zap } from 'lucide-react'
+import { ChevronLeft, Activity, AlertCircle, CheckCircle, Clock, XCircle, Zap, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
@@ -21,7 +21,11 @@ interface AgentRun {
   _count: { steps: number; exceptions: number }
 }
 
-const STATUS_CONFIG: Record<string, { label: string; variant: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'gray'; icon: React.ComponentType<{ className?: string }> }> = {
+const STATUS_CONFIG: Record<string, {
+  label: string
+  variant: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'gray'
+  icon: React.ComponentType<{ className?: string }>
+}> = {
   QUEUED:    { label: 'Queued',    variant: 'gray',    icon: Clock },
   RUNNING:   { label: 'Running',   variant: 'info',    icon: RefreshCw },
   COMPLETED: { label: 'Completed', variant: 'success', icon: CheckCircle },
@@ -38,29 +42,62 @@ function formatDate(d: string) {
 function duration(start: string | null, end: string | null): string {
   if (!start) return '—'
   const ms = new Date(end ?? Date.now()).getTime() - new Date(start).getTime()
-  if (ms < 1000) return `${ms}ms`
+  if (ms < 1000)  return `${ms}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
   return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
 }
 
-export default function AgentRunsPage() {
-  const [runs, setRuns] = useState<AgentRun[]>([])
-  const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [refreshing, setRefreshing] = useState(false)
+const STATUSES = ['', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'ESCALATED']
 
-  const load = useCallback(async () => {
-    setRefreshing(true)
-    const qs = statusFilter ? `?status=${statusFilter}` : ''
-    const res = await fetch(`/api/agent/runs${qs}`)
-    if (res.ok) setRuns(await res.json())
-    setLoading(false)
-    setRefreshing(false)
+export default function AgentRunsPage() {
+  const [runs, setRuns]           = useState<AgentRun[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [live, setLive]           = useState(false)
+  const [statusFilter, setFilter] = useState('')
+  const esRef = useRef<EventSource | null>(null)
+
+  function connect(filter: string) {
+    // Close any existing connection
+    if (esRef.current) {
+      esRef.current.close()
+      esRef.current = null
+    }
+
+    setLive(false)
+    const qs = filter ? `?status=${filter}` : ''
+    const es = new EventSource(`/api/agent/runs/stream${qs}`)
+    esRef.current = es
+
+    es.onopen = () => setLive(true)
+
+    es.onmessage = (e) => {
+      try {
+        const { runs: updated } = JSON.parse(e.data)
+        setRuns(updated)
+        setLoading(false)
+        setLive(true)
+      } catch {}
+    }
+
+    es.onerror = () => {
+      setLive(false)
+      // EventSource will auto-reconnect — don't close it
+    }
+  }
+
+  // Reconnect when filter changes
+  useEffect(() => {
+    connect(statusFilter)
+    return () => {
+      esRef.current?.close()
+      esRef.current = null
+    }
   }, [statusFilter])
 
-  useEffect(() => { load() }, [load])
-
-  const statuses = ['', 'QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'ESCALATED']
+  function manualReconnect() {
+    setLoading(true)
+    connect(statusFilter)
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -78,18 +115,28 @@ export default function AgentRunsPage() {
             <p className="text-sm text-gray-500">Autonomous workflow execution history</p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={load} disabled={refreshing}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+
+        <div className="flex items-center gap-3">
+          {/* Live indicator */}
+          <div className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${live ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
+            <span className={`text-xs font-medium ${live ? 'text-green-600' : 'text-gray-400'}`}>
+              {live ? 'Live' : 'Connecting…'}
+            </span>
+          </div>
+          <Button variant="ghost" size="sm" onClick={manualReconnect}>
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Reconnect
+          </Button>
+        </div>
       </div>
 
       {/* Status filter tabs */}
       <div className="flex gap-2 mb-6 flex-wrap">
-        {statuses.map(s => (
+        {STATUSES.map(s => (
           <button
             key={s}
-            onClick={() => setStatusFilter(s)}
+            onClick={() => setFilter(s)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               statusFilter === s
                 ? 'bg-blue-600 text-white border-blue-600'
@@ -112,7 +159,7 @@ export default function AgentRunsPage() {
       ) : (
         <div className="space-y-3">
           {runs.map(run => {
-            const cfg = STATUS_CONFIG[run.status] ?? STATUS_CONFIG.FAILED
+            const cfg  = STATUS_CONFIG[run.status] ?? STATUS_CONFIG.FAILED
             const Icon = cfg.icon
             return (
               <Link key={run.id} href={`/dashboard/agent-runs/${run.id}`}>
@@ -121,9 +168,9 @@ export default function AgentRunsPage() {
                     <div className="flex items-start gap-3 min-w-0">
                       <Icon className={`h-5 w-5 mt-0.5 flex-shrink-0 ${
                         run.status === 'COMPLETED' ? 'text-green-500' :
-                        run.status === 'FAILED' ? 'text-red-500' :
+                        run.status === 'FAILED'    ? 'text-red-500' :
                         run.status === 'ESCALATED' ? 'text-yellow-500' :
-                        run.status === 'RUNNING' ? 'text-blue-500 animate-spin' :
+                        run.status === 'RUNNING'   ? 'text-blue-500 animate-spin' :
                         'text-gray-400'
                       }`} />
                       <div className="min-w-0">

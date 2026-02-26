@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw, Activity } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -72,38 +72,82 @@ const SEVERITY_VARIANT: Record<string, 'gray' | 'warning' | 'danger'> = {
   CRITICAL: 'danger',
 }
 
+const ACTION_TYPE_COLOR: Record<string, string> = {
+  API_CALL:     'bg-blue-50 text-blue-700',
+  DECISION:     'bg-purple-50 text-purple-700',
+  ESCALATION:   'bg-red-50 text-red-700',
+  MEMORY_READ:  'bg-teal-50 text-teal-700',
+  MEMORY_WRITE: 'bg-teal-50 text-teal-700',
+}
+
 function formatDate(d: string) {
   return new Date(d).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
 }
 
-export default function AgentRunDetailPage({ params }: { params: { id: string } }) {
-  const [run, setRun] = useState<AgentRun | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [cancelling, setCancelling] = useState(false)
-  const [activeTab, setActiveTab] = useState<'steps' | 'logs' | 'exceptions'>('steps')
+const TERMINAL = new Set(['COMPLETED', 'FAILED', 'ESCALATED'])
 
-  async function load() {
-    const res = await fetch(`/api/agent/runs/${params.id}`)
-    if (res.ok) setRun(await res.json())
-    setLoading(false)
+export default function AgentRunDetailPage({ params }: { params: { id: string } }) {
+  const [run, setRun]         = useState<AgentRun | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [live, setLive]       = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [activeTab, setActiveTab]   = useState<'steps' | 'logs' | 'exceptions'>('steps')
+  const esRef = useRef<EventSource | null>(null)
+
+  function connect() {
+    if (esRef.current) { esRef.current.close(); esRef.current = null }
+    setLive(false)
+
+    const es = new EventSource(`/api/agent/runs/${params.id}/stream`)
+    esRef.current = es
+
+    es.onopen = () => setLive(true)
+
+    es.onmessage = (e) => {
+      try {
+        const { run: updated, live: isLive } = JSON.parse(e.data)
+        setRun(updated)
+        setLoading(false)
+        setLive(!!isLive)
+        if (!isLive) {
+          es.close()
+          esRef.current = null
+        }
+      } catch {}
+    }
+
+    es.onerror = () => {
+      setLive(false)
+      // Let EventSource auto-reconnect unless run is terminal
+      if (run && TERMINAL.has(run.status)) {
+        es.close()
+        esRef.current = null
+      }
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    connect()
+    return () => { esRef.current?.close(); esRef.current = null }
+  }, [params.id])
 
   async function cancel() {
     if (!confirm('Cancel this run?')) return
     setCancelling(true)
     await fetch(`/api/agent/runs/${params.id}/cancel`, { method: 'POST' })
-    await load()
+    // Force a fresh fetch after cancellation
+    const res = await fetch(`/api/agent/runs/${params.id}`)
+    if (res.ok) setRun(await res.json())
     setCancelling(false)
   }
 
   if (loading) return <div className="p-6 text-gray-400">Loading…</div>
-  if (!run) return <div className="p-6 text-red-600">Run not found</div>
+  if (!run)    return <div className="p-6 text-red-600">Run not found</div>
 
   const canCancel = run.status === 'QUEUED' || run.status === 'RUNNING'
+  const isActive  = !TERMINAL.has(run.status)
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -116,13 +160,26 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
       {/* Header */}
       <Card className="p-5 mb-6">
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <Activity className="h-5 w-5 text-blue-600" />
               <span className="font-mono text-sm text-gray-500">{run.id}</span>
-              <Badge variant={run.status === 'COMPLETED' ? 'success' : run.status === 'FAILED' ? 'danger' : run.status === 'ESCALATED' ? 'warning' : 'info'}>
+              <Badge variant={
+                run.status === 'COMPLETED' ? 'success' :
+                run.status === 'FAILED'    ? 'danger'  :
+                run.status === 'ESCALATED' ? 'warning' : 'info'
+              }>
                 {run.status}
               </Badge>
+              {/* Live indicator */}
+              {isActive && (
+                <div className="flex items-center gap-1 ml-1">
+                  <span className={`h-2 w-2 rounded-full ${live ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
+                  <span className={`text-xs ${live ? 'text-green-600' : 'text-gray-400'}`}>
+                    {live ? 'Live' : 'Reconnecting…'}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-3">
               <div>
@@ -147,13 +204,21 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
               )}
             </div>
             {run.summary && <p className="text-sm text-gray-700 mt-3">{run.summary}</p>}
-            {run.error && <p className="text-sm text-red-600 mt-3 font-medium">{run.error}</p>}
+            {run.error   && <p className="text-sm text-red-600 mt-3 font-medium">{run.error}</p>}
           </div>
-          {canCancel && (
-            <Button variant="ghost" size="sm" onClick={cancel} disabled={cancelling} className="flex-shrink-0">
-              {cancelling ? 'Cancelling…' : 'Cancel'}
-            </Button>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {!live && !TERMINAL.has(run.status) && (
+              <Button variant="ghost" size="sm" onClick={connect}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Reconnect
+              </Button>
+            )}
+            {canCancel && (
+              <Button variant="ghost" size="sm" onClick={cancel} disabled={cancelling}>
+                {cancelling ? 'Cancelling…' : 'Cancel'}
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -164,12 +229,14 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-sm font-medium capitalize border-b-2 -mb-px transition-colors ${
-              activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+              activeTab === tab
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             {tab}
-            {tab === 'steps' && ` (${run.steps.length})`}
-            {tab === 'logs' && ` (${run.actionLogs.length})`}
+            {tab === 'steps'      && ` (${run.steps.length})`}
+            {tab === 'logs'       && ` (${run.actionLogs.length})`}
             {tab === 'exceptions' && run.exceptions.length > 0 && ` (${run.exceptions.length})`}
           </button>
         ))}
@@ -179,7 +246,9 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
       {activeTab === 'steps' && (
         <div className="space-y-2">
           {run.steps.length === 0 && (
-            <p className="text-gray-400 text-sm py-6 text-center">No steps recorded yet.</p>
+            <p className="text-gray-400 text-sm py-6 text-center">
+              {isActive ? 'Waiting for steps…' : 'No steps recorded.'}
+            </p>
           )}
           {run.steps.map(step => {
             const Icon = STEP_STATUS_ICON[step.status] ?? Clock
@@ -189,8 +258,8 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
                   <div className="flex flex-col items-center gap-1">
                     <span className="text-xs text-gray-400 font-mono w-6 text-center">{step.stepOrder}</span>
                     <Icon className={`h-5 w-5 ${
-                      step.status === 'DONE' ? 'text-green-500' :
-                      step.status === 'FAILED' ? 'text-red-500' :
+                      step.status === 'DONE'    ? 'text-green-500' :
+                      step.status === 'FAILED'  ? 'text-red-500' :
                       step.status === 'RUNNING' ? 'text-blue-500 animate-spin' :
                       'text-gray-400'
                     }`} />
@@ -222,14 +291,18 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
       {activeTab === 'logs' && (
         <div className="space-y-2">
           {run.actionLogs.length === 0 && (
-            <p className="text-gray-400 text-sm py-6 text-center">No action logs.</p>
+            <p className="text-gray-400 text-sm py-6 text-center">
+              {isActive ? 'Waiting for action logs…' : 'No action logs.'}
+            </p>
           )}
           {run.actionLogs.map(log => (
             <Card key={log.id} className="p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded">{log.actionType}</span>
+                    <span className={`text-xs font-mono px-2 py-0.5 rounded ${ACTION_TYPE_COLOR[log.actionType] ?? 'bg-gray-100 text-gray-700'}`}>
+                      {log.actionType}
+                    </span>
                     <span className="text-sm font-medium">{log.target}</span>
                     {log.policyDecision && (
                       <Badge variant={
@@ -262,7 +335,7 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
               <div className="flex items-start gap-3">
                 <AlertCircle className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
                   ex.severity === 'CRITICAL' ? 'text-red-600' :
-                  ex.severity === 'HIGH' ? 'text-orange-500' :
+                  ex.severity === 'HIGH'     ? 'text-orange-500' :
                   'text-yellow-500'
                 }`} />
                 <div>
