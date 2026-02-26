@@ -23,6 +23,7 @@ import {
   Settings2,
   Activity,
   AlertOctagon,
+  Gauge,
 } from 'lucide-react'
 
 interface NavItem {
@@ -46,6 +47,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/agent-inbox',      label: 'Agent Inbox',      icon: Bot,          roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-runs',       label: 'Agent Runs',       icon: Activity,     roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-exceptions', label: 'Exceptions',       icon: AlertOctagon, roles: ['ADMIN', 'MANAGER'] },
+  { href: '/dashboard/agent-kpis',       label: 'KPI Dashboard',    icon: Gauge,        roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-settings',   label: 'Agent Settings',   icon: Settings2,    roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/admin', label: 'Admin', icon: Settings, roles: ['ADMIN'] },
   // Tenant-only
