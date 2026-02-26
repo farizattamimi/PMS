@@ -27,6 +27,7 @@ import {
   createException,
   loadPolicyForProperty,
 } from '../agent-runtime'
+import { getComplianceSnapshot, setComplianceSnapshot } from '../agent-memory'
 
 interface TriggerData {
   runId: string
@@ -330,6 +331,15 @@ export async function runCompliancePMAutopilot(data: TriggerData): Promise<void>
     // Finalize
     // ─────────────────────────────────────────────────────────────────────────
     const summary = `Processed ${items.length} compliance items: ${woCreated} WOs created, ${exceptionsCreated} exceptions, ${pmEscalated} PM alerts`
+
+    // Memory: persist compliance scan snapshot for trend tracking
+    const prevSnapshot = await getComplianceSnapshot(propertyId)
+    await setComplianceSnapshot(propertyId, {
+      lastScanAt: new Date().toISOString(),
+      woCreated,
+      exceptions: exceptionsCreated + pmEscalated,
+      prevExceptionsAllTime: prevSnapshot?.totalExceptionsAllTime ?? 0,
+    })
 
     if (escalated) {
       await escalateRun(runId, summary)

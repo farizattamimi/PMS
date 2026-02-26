@@ -19,6 +19,7 @@ import {
   createException,
   loadPolicyForProperty,
 } from '../agent-runtime'
+import { getPreferredVendor, setPreferredVendor } from '../agent-memory'
 
 interface TriggerData {
   runId: string
@@ -390,7 +391,25 @@ async function assignVendorStep(
       })
     : []
 
-  const allVendors = [...vendors, ...vendorsNoExpiry]
+  let allVendors = [...vendors, ...vendorsNoExpiry]
+
+  // Memory: if we have a preferred vendor for this property+category, move them
+  // to the front of the list so they get priority in the policy loop below.
+  const preferredVendorId = await getPreferredVendor(ctx.propertyId, workOrder.category)
+  if (preferredVendorId) {
+    const idx = allVendors.findIndex(v => v.id === preferredVendorId)
+    if (idx > 0) {
+      // Move preferred vendor to front
+      allVendors = [allVendors[idx], ...allVendors.slice(0, idx), ...allVendors.slice(idx + 1)]
+    }
+    await logAction({
+      runId: ctx.runId,
+      stepId,
+      actionType: 'MEMORY_READ',
+      target: `preferred_vendor_${workOrder.category}`,
+      responseJson: { preferredVendorId, found: idx >= 0 },
+    })
+  }
 
   if (allVendors.length === 0) {
     await failStep(stepId, 'No eligible vendor found for this property/category')
@@ -458,7 +477,18 @@ async function assignVendorStep(
     requestJson: { workOrderId, assignedVendorId: chosenVendorId },
     responseJson: { status: 'ASSIGNED' },
   })
-  await completeStep(stepId, { assignedVendorId: chosenVendorId })
+
+  // Memory: remember this vendor as preferred for this property+category
+  await setPreferredVendor(ctx.propertyId, workOrder.category, chosenVendorId)
+  await logAction({
+    runId: ctx.runId,
+    stepId,
+    actionType: 'MEMORY_WRITE',
+    target: `preferred_vendor_${workOrder.category}`,
+    requestJson: { vendorId: chosenVendorId },
+  })
+
+  await completeStep(stepId, { assignedVendorId: chosenVendorId, memorized: true })
 
   // Notify tenant via active lease on unit
   if (workOrder.unitId) {

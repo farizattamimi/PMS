@@ -113,6 +113,8 @@ function installMocks(ms: MockState) {
     workOrderCount:        (prisma.workOrder as any).count,
     vendorFindMany:        (prisma.vendor as any).findMany,
     leaseFindFirst:        (prisma.lease as any).findFirst,
+    agentMemoryFindUnique: (prisma.agentMemory as any).findUnique,
+    agentMemoryUpsert:     (prisma.agentMemory as any).upsert,
   }
 
   // Run lifecycle
@@ -162,6 +164,10 @@ function installMocks(ms: MockState) {
   // Lease — active tenant
   ;(prisma.lease as any).findFirst = async () => MOCK_LEASE
 
+  // Memory — no prior breach counts by default
+  ;(prisma.agentMemory as any).findUnique = async () => null
+  ;(prisma.agentMemory as any).upsert     = async () => ({})
+
   return saved
 }
 
@@ -178,6 +184,8 @@ function restoreMocks(saved: ReturnType<typeof installMocks>) {
   ;(prisma.workOrder as any).count          = saved.workOrderCount
   ;(prisma.vendor as any).findMany          = saved.vendorFindMany
   ;(prisma.lease as any).findFirst          = saved.leaseFindFirst
+  ;(prisma.agentMemory as any).findUnique   = saved.agentMemoryFindUnique
+  ;(prisma.agentMemory as any).upsert       = saved.agentMemoryUpsert
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

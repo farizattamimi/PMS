@@ -24,6 +24,7 @@ import {
   createException,
   loadPolicyForProperty,
 } from '../agent-runtime'
+import { getVendorBreachCount, incrementVendorBreachCount } from '../agent-memory'
 
 interface TriggerData {
   runId: string
@@ -151,7 +152,21 @@ export async function runSLABreachAutopilot(data: TriggerData): Promise<void> {
       entityId: workOrderId,
     })
 
-    await completeStep(s2, { severity, hoursBreached, exceptionCreated: true })
+    // Memory: increment breach count for the currently assigned vendor
+    let vendorBreachCount = 0
+    if (wo.assignedVendorId) {
+      await incrementVendorBreachCount(wo.assignedVendorId)
+      vendorBreachCount = await getVendorBreachCount(wo.assignedVendorId)
+      await logAction({
+        runId,
+        stepId: s2,
+        actionType: 'MEMORY_WRITE',
+        target: `vendor:${wo.assignedVendorId}:breach_count`,
+        responseJson: { breachCount: vendorBreachCount },
+      })
+    }
+
+    await completeStep(s2, { severity, hoursBreached, exceptionCreated: true, vendorBreachCount })
 
     // ─────────────────────────────────────────────────────────────────────────
     // Step 3: Attempt vendor reassignment
@@ -191,7 +206,25 @@ export async function runSLABreachAutopilot(data: TriggerData): Promise<void> {
       select: { id: true, name: true },
     })
 
-    const candidates = [...vendors, ...vendorsNoExpiry]
+    // Memory: filter out vendors with too many prior SLA breaches (unreliable)
+    const MAX_BREACH_THRESHOLD = 3
+    const candidatesRaw = [...vendors, ...vendorsNoExpiry]
+    const candidates: typeof candidatesRaw = []
+    for (const v of candidatesRaw) {
+      const breaches = await getVendorBreachCount(v.id)
+      if (breaches < MAX_BREACH_THRESHOLD) {
+        candidates.push(v)
+      } else {
+        await logAction({
+          runId,
+          stepId: s3,
+          actionType: 'MEMORY_READ',
+          target: `vendor:${v.id}:breach_count`,
+          responseJson: { breachCount: breaches, skipped: true, reason: 'exceeds breach threshold' },
+        })
+      }
+    }
+
     let reassigned = false
     let chosenVendorId: string | null = null
 

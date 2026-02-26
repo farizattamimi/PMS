@@ -110,7 +110,7 @@ export async function skipStep(stepId: string, reason: string) {
 export async function logAction(opts: {
   runId: string
   stepId?: string
-  actionType: 'API_CALL' | 'DECISION' | 'ESCALATION'
+  actionType: 'API_CALL' | 'DECISION' | 'ESCALATION' | 'MEMORY_READ' | 'MEMORY_WRITE'
   target: string
   requestJson?: Record<string, unknown>
   responseJson?: Record<string, unknown>

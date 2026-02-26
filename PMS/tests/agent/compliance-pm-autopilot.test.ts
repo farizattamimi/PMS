@@ -104,6 +104,8 @@ function installMocks(ms: MockState) {
     complianceUpdate:         (prisma.complianceItem as any).update,
     workOrderCreate:          (prisma.workOrder as any).create,
     pMScheduleFindMany:       (prisma.pMSchedule as any).findMany,
+    agentMemoryFindUnique:    (prisma.agentMemory as any).findUnique,
+    agentMemoryUpsert:        (prisma.agentMemory as any).upsert,
   }
 
   // Run lifecycle
@@ -155,6 +157,10 @@ function installMocks(ms: MockState) {
   // PM schedules — none overdue by default
   ;(prisma.pMSchedule as any).findMany = async () => []
 
+  // Memory — no prior snapshots by default
+  ;(prisma.agentMemory as any).findUnique = async () => null
+  ;(prisma.agentMemory as any).upsert     = async () => ({})
+
   return saved
 }
 
@@ -171,6 +177,8 @@ function restoreMocks(saved: ReturnType<typeof installMocks>) {
   ;(prisma.complianceItem as any).update    = saved.complianceUpdate
   ;(prisma.workOrder as any).create         = saved.workOrderCreate
   ;(prisma.pMSchedule as any).findMany      = saved.pMScheduleFindMany
+  ;(prisma.agentMemory as any).findUnique   = saved.agentMemoryFindUnique
+  ;(prisma.agentMemory as any).upsert       = saved.agentMemoryUpsert
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

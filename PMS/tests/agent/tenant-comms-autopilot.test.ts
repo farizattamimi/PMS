@@ -108,6 +108,8 @@ function installMocks(ms: MockState) {
     ledgerEntryFindMany:   (prisma.ledgerEntry as any).findMany,
     workOrderFindMany:     (prisma.workOrder as any).findMany,
     anthropicCreate:       (anthropic.messages as any).create,
+    agentMemoryFindUnique: (prisma.agentMemory as any).findUnique,
+    agentMemoryUpsert:     (prisma.agentMemory as any).upsert,
   }
 
   // Run lifecycle
@@ -194,6 +196,10 @@ function installMocks(ms: MockState) {
     }
   }
 
+  // Memory — no prior tenant context by default
+  ;(prisma.agentMemory as any).findUnique = async () => null
+  ;(prisma.agentMemory as any).upsert     = async () => ({})
+
   return saved
 }
 
@@ -214,6 +220,8 @@ function restoreMocks(saved: ReturnType<typeof installMocks>) {
   ;(prisma.ledgerEntry as any).findMany     = saved.ledgerEntryFindMany
   ;(prisma.workOrder as any).findMany       = saved.workOrderFindMany
   ;(anthropic.messages as any).create       = saved.anthropicCreate
+  ;(prisma.agentMemory as any).findUnique   = saved.agentMemoryFindUnique
+  ;(prisma.agentMemory as any).upsert       = saved.agentMemoryUpsert
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

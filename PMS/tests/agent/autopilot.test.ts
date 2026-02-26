@@ -80,6 +80,8 @@ function installMocks(ms: MockState) {
     workOrderCount:        (prisma.workOrder as any).count,
     vendorFindMany:        (prisma.vendor as any).findMany,
     leaseFindFirst:        (prisma.lease as any).findFirst,
+    agentMemoryFindUnique: (prisma.agentMemory as any).findUnique,
+    agentMemoryUpsert:     (prisma.agentMemory as any).upsert,
   }
 
   let stepCounter = 0
@@ -139,6 +141,10 @@ function installMocks(ms: MockState) {
   ;(prisma.vendor as any).findMany        = async () => []
   ;(prisma.lease as any).findFirst        = async () => null
 
+  // Memory — no prior memory by default
+  ;(prisma.agentMemory as any).findUnique = async () => null
+  ;(prisma.agentMemory as any).upsert     = async () => ({})
+
   return saved
 }
 
@@ -161,6 +167,8 @@ function restoreMocks(saved: ReturnType<typeof installMocks>) {
   ;(prisma.workOrder as any).count         = saved.workOrderCount
   ;(prisma.vendor as any).findMany         = saved.vendorFindMany
   ;(prisma.lease as any).findFirst         = saved.leaseFindFirst
+  ;(prisma.agentMemory as any).findUnique  = saved.agentMemoryFindUnique
+  ;(prisma.agentMemory as any).upsert      = saved.agentMemoryUpsert
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

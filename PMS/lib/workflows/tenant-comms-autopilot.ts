@@ -19,6 +19,7 @@ import {
   createException,
   loadPolicyForProperty,
 } from '../agent-runtime'
+import { getTenantContext, setTenantContext } from '../agent-memory'
 
 interface TriggerData {
   runId: string
@@ -112,12 +113,17 @@ export async function runTenantCommsAutopilot(data: TriggerData): Promise<void> 
     const subject = thread.subject
     const messageBody = latestTenantMessage.body
     const managerId = thread.property.managerId
+    const tenantModelId = thread.tenant.id
+
+    // Memory: load tenant's previous interaction context
+    const tenantCtx = await getTenantContext(tenantModelId)
 
     await completeStep(s1, {
       threadId,
       subject,
       messagePreview: messageBody.slice(0, 80),
       managerId,
+      tenantLastIntent: tenantCtx?.lastIntent ?? null,
     })
 
     // Load policy
@@ -141,6 +147,10 @@ export async function runTenantCommsAutopilot(data: TriggerData): Promise<void> 
     let hasLegalKeywords = localLegalHit
 
     try {
+      const priorContext = tenantCtx
+        ? `\n\nContext: This tenant previously contacted us about: ${tenantCtx.lastIntent} (${tenantCtx.messageCount} total message${tenantCtx.messageCount !== 1 ? 's' : ''}).`
+        : ''
+
       const classifyResponse = await anthropic.messages.create({
         model: AI_MODEL,
         max_tokens: 256,
@@ -149,7 +159,7 @@ MAINTENANCE_INTAKE, BILLING, LEASE_INFO, FAQ, RENEWAL_INFO, STATUS_UPDATE, COMPL
 
 Also check if the message contains legal keywords: lawsuit, sue, attorney, lawyer, legal action, discrimination, harassment, eviction notice, habitability, uninhabitable, breach of contract, negligence, personal injury, threat, threatening, mold, retaliation.
 
-Respond ONLY with valid JSON: { "intent": "INTENT_HERE", "hasLegalKeywords": true/false }`,
+Respond ONLY with valid JSON: { "intent": "INTENT_HERE", "hasLegalKeywords": true/false }${priorContext}`,
         messages: [
           {
             role: 'user',
@@ -187,6 +197,13 @@ Respond ONLY with valid JSON: { "intent": "INTENT_HERE", "hasLegalKeywords": tru
       // Parse error or API error — fall back to OTHER
       intent = 'OTHER'
     }
+
+    // Memory: update tenant's interaction context
+    await setTenantContext(tenantModelId, {
+      lastIntent: intent,
+      messageCount: (tenantCtx?.messageCount ?? 0) + 1,
+      lastMessageAt: new Date().toISOString(),
+    })
 
     await completeStep(s2, { intent, hasLegalKeywords })
 
