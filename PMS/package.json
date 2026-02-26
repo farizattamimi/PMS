@@ -14,7 +14,9 @@
     "db:studio": "prisma studio",
     "agent:daemon": "node scripts/agent-daemon.mjs",
     "agent:daemon:hourly": "AGENT_INTERVAL_MINUTES=60 node scripts/agent-daemon.mjs",
-    "test:policy": "node --loader tsx --test tests/policy-engine.test.ts"
+    "test:policy": "node --loader tsx --test tests/policy-engine.test.ts",
+    "test:agent": "node --loader tsx --test tests/agent/autopilot.test.ts",
+    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
