@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { validateCronSecret } from '@/lib/security'
 import { createRun, makeDedupeKey, runExistsForKey } from '@/lib/agent-runtime'
 import { runMaintenanceAutopilot } from '@/lib/workflows/maintenance-autopilot'
+import { runTenantCommsAutopilot } from '@/lib/workflows/tenant-comms-autopilot'
 import type { AgentEvent } from '@/lib/agent-events'
 
 /**
@@ -64,14 +65,26 @@ export async function POST(req: Request) {
     })
   }
 
+  if (routedWorkflow === 'TENANT_COMMS' && event.propertyId) {
+    runTenantCommsAutopilot({
+      runId,
+      propertyId: event.propertyId,
+      threadId: event.entityId ?? '',
+    }).catch((err: Error) => {
+      console.error('[agent/events] TenantComms workflow error:', err.message)
+    })
+  }
+
   return NextResponse.json({ ok: true, runId, dedupeKey })
 }
 
-type WorkflowType = 'MAINTENANCE'
+type WorkflowType = 'MAINTENANCE' | 'TENANT_COMMS'
 
 function routeEvent(eventType: string): WorkflowType | null {
   const maintenanceEvents = ['PM_DUE', 'NEW_INCIDENT', 'WO_SLA_BREACH']
   if (maintenanceEvents.includes(eventType)) return 'MAINTENANCE'
+  const tenantCommsEvents = ['NEW_MESSAGE_THREAD', 'NEW_MESSAGE']
+  if (tenantCommsEvents.includes(eventType)) return 'TENANT_COMMS'
   return null
 }
 

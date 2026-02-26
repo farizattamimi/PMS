@@ -7,6 +7,7 @@ export type AgentEventType =
   | 'PM_DUE'
   | 'NEW_INCIDENT'
   | 'NEW_MESSAGE_THREAD'
+  | 'NEW_MESSAGE'
   | 'COMPLIANCE_DUE'
   | 'WO_SLA_BREACH'
   | 'LEASE_EXPIRING'

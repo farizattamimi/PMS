@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { messageThreadScopeWhere } from '@/lib/access'
+import { publishAgentEvent } from '@/lib/agent-events'
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
@@ -17,7 +18,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       ...scopeWhere,
     },
     include: {
-      property: { select: { managerId: true, name: true } },
+      property: { select: { id: true, managerId: true, name: true } },
       tenant: { include: { user: { select: { id: true, name: true } } } },
     },
   })
@@ -41,6 +42,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     where: { id: params.id },
     data: { updatedAt: new Date() },
   })
+
+  // Fire agent event if tenant is sending (so autopilot can classify + respond)
+  const isTenant = session.user.systemRole === 'TENANT'
+  if (isTenant && thread.property.id) {
+    publishAgentEvent({
+      eventType: 'NEW_MESSAGE',
+      propertyId: thread.property.id,
+      entityId: thread.id,
+      entityType: 'message_thread',
+    })
+  }
 
   // Notify the other party
   const isManager = session.user.systemRole !== 'TENANT'
