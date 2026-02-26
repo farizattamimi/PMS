@@ -3,6 +3,7 @@ import { validateCronSecret } from '@/lib/security'
 import { createRun, makeDedupeKey, runExistsForKey } from '@/lib/agent-runtime'
 import { runMaintenanceAutopilot } from '@/lib/workflows/maintenance-autopilot'
 import { runTenantCommsAutopilot } from '@/lib/workflows/tenant-comms-autopilot'
+import { runCompliancePMAutopilot } from '@/lib/workflows/compliance-pm-autopilot'
 import type { AgentEvent } from '@/lib/agent-events'
 
 /**
@@ -75,16 +76,26 @@ export async function POST(req: Request) {
     })
   }
 
+  if (routedWorkflow === 'COMPLIANCE_PM' && event.propertyId) {
+    runCompliancePMAutopilot({
+      runId,
+      propertyId: event.propertyId,
+    }).catch((err: Error) => {
+      console.error('[agent/events] CompliancePM workflow error:', err.message)
+    })
+  }
+
   return NextResponse.json({ ok: true, runId, dedupeKey })
 }
 
-type WorkflowType = 'MAINTENANCE' | 'TENANT_COMMS'
+type WorkflowType = 'MAINTENANCE' | 'TENANT_COMMS' | 'COMPLIANCE_PM'
 
 function routeEvent(eventType: string): WorkflowType | null {
   const maintenanceEvents = ['PM_DUE', 'NEW_INCIDENT', 'WO_SLA_BREACH']
   if (maintenanceEvents.includes(eventType)) return 'MAINTENANCE'
   const tenantCommsEvents = ['NEW_MESSAGE_THREAD', 'NEW_MESSAGE']
   if (tenantCommsEvents.includes(eventType)) return 'TENANT_COMMS'
+  if (eventType === 'COMPLIANCE_DUE') return 'COMPLIANCE_PM'
   return null
 }
 
