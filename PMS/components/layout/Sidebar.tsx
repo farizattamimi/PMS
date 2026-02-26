@@ -25,6 +25,7 @@ import {
   AlertOctagon,
   Gauge,
   CalendarDays,
+  BellRing,
 } from 'lucide-react'
 
 interface NavItem {
@@ -44,7 +45,8 @@ const navItems: NavItem[] = [
   { href: '/dashboard/inspections', label: 'Inspections', icon: ClipboardCheck, roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/compliance', label: 'Compliance', icon: ShieldCheck, roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare },
-  { href: '/dashboard/calendar',  label: 'Calendar',  icon: CalendarDays, roles: ['ADMIN', 'MANAGER'] },
+  { href: '/dashboard/calendar',     label: 'Calendar',     icon: CalendarDays, roles: ['ADMIN', 'MANAGER'] },
+  { href: '/dashboard/bulk-notify',  label: 'Bulk Notify',  icon: BellRing,     roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/reporting', label: 'Reporting', icon: BarChart3, roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-inbox',      label: 'Agent Inbox',      icon: Bot,          roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-runs',       label: 'Agent Runs',       icon: Activity,     roles: ['ADMIN', 'MANAGER'] },
