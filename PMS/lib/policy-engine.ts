@@ -175,6 +175,11 @@ export function evaluateAction(
       return { decision: 'ALLOW', reason: 'Compliance task auto-creation is within policy' }
     }
 
+    case 'WO_SLA_ESCALATE': {
+      // SLA breach escalations are always permitted — safety valve
+      return { decision: 'ALLOW', reason: 'SLA breach escalation is always permitted' }
+    }
+
     case 'ESCALATE': {
       // Escalations are always permitted — they are the safety valve
       return { decision: 'ALLOW', reason: 'Escalation is always permitted' }

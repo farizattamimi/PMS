@@ -18,7 +18,8 @@
     "test:agent": "node --loader tsx --test tests/agent/autopilot.test.ts",
     "test:comms": "node --loader tsx --test tests/agent/tenant-comms-autopilot.test.ts",
     "test:compliance": "node --loader tsx --test tests/agent/compliance-pm-autopilot.test.ts",
-    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts tests/agent/tenant-comms-autopilot.test.ts tests/agent/compliance-pm-autopilot.test.ts"
+    "test:sla": "node --loader tsx --test tests/agent/sla-breach-autopilot.test.ts",
+    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts tests/agent/tenant-comms-autopilot.test.ts tests/agent/compliance-pm-autopilot.test.ts tests/agent/sla-breach-autopilot.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

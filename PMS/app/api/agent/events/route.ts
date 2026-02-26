@@ -4,6 +4,7 @@ import { createRun, makeDedupeKey, runExistsForKey } from '@/lib/agent-runtime'
 import { runMaintenanceAutopilot } from '@/lib/workflows/maintenance-autopilot'
 import { runTenantCommsAutopilot } from '@/lib/workflows/tenant-comms-autopilot'
 import { runCompliancePMAutopilot } from '@/lib/workflows/compliance-pm-autopilot'
+import { runSLABreachAutopilot } from '@/lib/workflows/sla-breach-autopilot'
 import type { AgentEvent } from '@/lib/agent-events'
 
 /**
@@ -85,17 +86,28 @@ export async function POST(req: Request) {
     })
   }
 
+  if (routedWorkflow === 'SLA_BREACH' && event.propertyId && event.entityId) {
+    runSLABreachAutopilot({
+      runId,
+      propertyId: event.propertyId,
+      workOrderId: event.entityId,
+    }).catch((err: Error) => {
+      console.error('[agent/events] SLABreach workflow error:', err.message)
+    })
+  }
+
   return NextResponse.json({ ok: true, runId, dedupeKey })
 }
 
-type WorkflowType = 'MAINTENANCE' | 'TENANT_COMMS' | 'COMPLIANCE_PM'
+type WorkflowType = 'MAINTENANCE' | 'TENANT_COMMS' | 'COMPLIANCE_PM' | 'SLA_BREACH'
 
 function routeEvent(eventType: string): WorkflowType | null {
-  const maintenanceEvents = ['PM_DUE', 'NEW_INCIDENT', 'WO_SLA_BREACH']
+  const maintenanceEvents = ['PM_DUE', 'NEW_INCIDENT']
   if (maintenanceEvents.includes(eventType)) return 'MAINTENANCE'
   const tenantCommsEvents = ['NEW_MESSAGE_THREAD', 'NEW_MESSAGE']
   if (tenantCommsEvents.includes(eventType)) return 'TENANT_COMMS'
   if (eventType === 'COMPLIANCE_DUE') return 'COMPLIANCE_PM'
+  if (eventType === 'WO_SLA_BREACH') return 'SLA_BREACH'
   return null
 }
 
@@ -104,5 +116,5 @@ function mapEventToTriggerType(
 ): 'PM_DUE' | 'NEW_INCIDENT' | 'UNASSIGNED_WO' {
   if (eventType === 'PM_DUE') return 'PM_DUE'
   if (eventType === 'NEW_INCIDENT') return 'NEW_INCIDENT'
-  return 'UNASSIGNED_WO'
+  return 'UNASSIGNED_WO' // fallback for any future MAINTENANCE events
 }
