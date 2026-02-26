@@ -16,7 +16,8 @@
     "agent:daemon:hourly": "AGENT_INTERVAL_MINUTES=60 node scripts/agent-daemon.mjs",
     "test:policy": "node --loader tsx --test tests/policy-engine.test.ts",
     "test:agent": "node --loader tsx --test tests/agent/autopilot.test.ts",
-    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts"
+    "test:comms": "node --loader tsx --test tests/agent/tenant-comms-autopilot.test.ts",
+    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts tests/agent/tenant-comms-autopilot.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
