@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(npx tsc:*)",
+      "Bash(ls:*)",
+      "Bash(npm run:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(find .:*)",
+      "Bash(echo done:*)",
+      "Bash(sleep 1:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(/Applications/Postgres.app/Contents/Versions/14/bin/psql:*)",
+      "Bash(ps:*)",
+      "Bash(kill:*)",
+      "Bash(echo:*)",
+      "Bash(echo === Get a property ===:*)",
+      "Bash(echo === PM Schedules for property ===:*)",
+      "Bash(echo === Create test incident ===:*)",
+      "Bash(/usr/bin/git:*)",
+      "Bash(echo ===:*)",
+      "Bash($GIT:*)",
+      "Bash(GIT=\"/usr/local/Homebrew/Library/Homebrew/shims/scm/git\" $GIT -C /Users/RIA git status)",
+      "Bash(echo exit: $?:*)"
+    ]
+  }
+}

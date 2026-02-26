@@ -1,0 +1,935 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ──────────────────────────────────────────────────────────────────
+
+enum SystemRole {
+  ADMIN
+  MANAGER
+  TENANT
+}
+
+enum OrgType {
+  OPERATOR
+  OWNER
+  VENDOR
+}
+
+enum OrgStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PropertyStatus {
+  ACTIVE
+  ONBOARDING
+  OFFBOARDED
+}
+
+enum PropertyType {
+  MULTIFAMILY
+  SINGLE_FAMILY
+  COMMERCIAL
+  MIXED_USE
+}
+
+enum UnitStatus {
+  AVAILABLE
+  OCCUPIED
+  DOWN
+  MODEL
+}
+
+enum TenantStatus {
+  PROSPECT
+  ACTIVE
+  PAST
+  EVICTED
+}
+
+enum LeaseStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  TERMINATED
+}
+
+enum WorkOrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum WorkOrderStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  CANCELED
+}
+
+enum WorkOrderCategory {
+  PLUMBING
+  HVAC
+  ELECTRICAL
+  GENERAL
+  TURNOVER
+  OTHER
+}
+
+enum WorkOrderCostType {
+  LABOR
+  PARTS
+  CONTRACTOR
+  OTHER
+}
+
+enum LedgerEntryType {
+  RENT
+  DEPOSIT
+  LATE_FEE
+  MAINTENANCE_EXPENSE
+  UTILITY
+  OTHER_INCOME
+  OTHER_EXPENSE
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+}
+
+enum Permission {
+  PROPERTIES_READ
+  PROPERTIES_WRITE
+  UNITS_READ
+  UNITS_WRITE
+  TENANTS_READ
+  TENANTS_WRITE
+  LEASES_READ
+  LEASES_WRITE
+  LEDGER_READ
+  LEDGER_WRITE
+  WORKORDERS_READ
+  WORKORDERS_WRITE
+  VENDORS_READ
+  VENDORS_WRITE
+  AUDIT_READ
+  REPORTS_READ
+  ADMIN_READ
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AssetCategory {
+  HVAC
+  ELEVATOR
+  PLUMBING
+  ELECTRICAL
+  APPLIANCE
+  ROOF
+  STRUCTURAL
+  OTHER
+}
+
+enum AssetCondition {
+  GOOD
+  FAIR
+  POOR
+  FAILED
+}
+
+enum IncidentCategory {
+  NOISE
+  LEASE_VIOLATION
+  SAFETY
+  HARASSMENT
+  PROPERTY_DAMAGE
+  OTHER
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+enum RenewalOfferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum InspectionType {
+  MOVE_IN
+  MOVE_OUT
+  ROUTINE
+  DRIVE_BY
+}
+
+enum InspectionStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BidStatus {
+  PENDING
+  SUBMITTED
+  ACCEPTED
+  DECLINED
+}
+
+enum ThreadStatus {
+  OPEN
+  CLOSED
+}
+
+enum ComplianceCategory {
+  FIRE_SAFETY
+  ELEVATOR
+  HEALTH_PERMIT
+  BUILDING_PERMIT
+  HVAC_CERT
+  ELECTRICAL
+  PLUMBING
+  OTHER
+}
+
+enum ComplianceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLIANT
+  OVERDUE
+  WAIVED
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  DENIED
+  WITHDRAWN
+}
+
+enum AgentActionType {
+  SEND_MESSAGE
+  ASSIGN_VENDOR
+  SEND_BID_REQUEST
+  ACCEPT_BID
+  SEND_RENEWAL_OFFER
+  CREATE_WORK_ORDER
+  CLOSE_THREAD
+}
+
+enum AgentActionStatus {
+  PENDING_APPROVAL
+  AUTO_EXECUTED
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+// ── Models ─────────────────────────────────────────────────────────────────
+
+model Organization {
+  id        String    @id @default(cuid())
+  name      String
+  type      OrgType
+  status    OrgStatus @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  users       User[]
+  properties  Property[]  @relation("PropertyOrg")
+  ownedProps  Property[]  @relation("PropertyOwnerOrg")
+  vendors     Vendor[]
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  systemRole   SystemRole @default(TENANT)
+  isActive     Boolean    @default(true)
+  orgId        String?
+  org          Organization? @relation(fields: [orgId], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  managedProperties Property[]  @relation("PropertyManager")
+  tenant            Tenant?
+  submittedWorkOrders WorkOrder[] @relation("WOSubmittedBy")
+  auditLogs         AuditLog[]  @relation("AuditActor")
+  uploadedDocs      Document[]  @relation("DocUploader")
+  userAppRoles      UserAppRole[]
+  notifications     Notification[]
+  agentActions      AgentAction[] @relation("AgentActionManager")
+  agentSettings     AgentSettings?
+}
+
+model AppRole {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  permissions Permission[]
+  userAppRoles UserAppRole[]
+}
+
+model UserAppRole {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      AppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  scopeType String? // "property", "unit", etc.
+  scopeId   String?
+
+  @@unique([userId, roleId, scopeType, scopeId])
+}
+
+model Property {
+  id           String         @id @default(cuid())
+  name         String
+  address      String
+  city         String
+  state        String
+  zip          String
+  propertyType PropertyType   @default(MULTIFAMILY)
+  status       PropertyStatus @default(ACTIVE)
+  managerId    String
+  manager      User           @relation("PropertyManager", fields: [managerId], references: [id])
+  orgId        String?
+  org          Organization?  @relation("PropertyOrg", fields: [orgId], references: [id])
+  ownerOrgId   String?
+  ownerOrg     Organization?  @relation("PropertyOwnerOrg", fields: [ownerOrgId], references: [id])
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  units        Unit[]
+  buildings    Building[]
+  leases       Lease[]
+  workOrders   WorkOrder[]
+  ledgerEntries LedgerEntry[]
+  propertyVendors PropertyVendor[]
+  tenants      Tenant[]       @relation("TenantProperty")
+  documents    Document[]     @relation("DocProperty")
+  assets       Asset[]
+  incidents    Incident[]
+  budgets      Budget[]
+  inspections  Inspection[]
+  threads      MessageThread[]
+  complianceItems ComplianceItem[]
+  applications TenantApplication[]
+  agentActions AgentAction[]  @relation("AgentActionProperty")
+}
+
+model Building {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  name       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  units Unit[]
+}
+
+model Unit {
+  id          String     @id @default(cuid())
+  propertyId  String
+  property    Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  buildingId  String?
+  building    Building?  @relation(fields: [buildingId], references: [id])
+  unitNumber  String
+  bedrooms    Int
+  bathrooms   Float
+  sqFt        Int
+  monthlyRent Float
+  marketRent  Float?
+  status      UnitStatus @default(AVAILABLE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  leases     Lease[]
+  workOrders WorkOrder[]
+  assets     Asset[]
+  inspections Inspection[]
+  applications TenantApplication[]
+
+  @@unique([propertyId, unitNumber])
+}
+
+model Tenant {
+  id                    String       @id @default(cuid())
+  userId                String       @unique
+  user                  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone                 String
+  emergencyContactName  String
+  emergencyContactPhone String
+  status                TenantStatus @default(PROSPECT)
+  propertyId            String?
+  property              Property?    @relation("TenantProperty", fields: [propertyId], references: [id])
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  leases       Lease[]
+  threads      MessageThread[]
+  application  TenantApplication?
+}
+
+model Lease {
+  id            String      @id @default(cuid())
+  unitId        String
+  unit          Unit        @relation(fields: [unitId], references: [id])
+  tenantId      String
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  propertyId    String?
+  property      Property?   @relation(fields: [propertyId], references: [id])
+  startDate     DateTime
+  endDate       DateTime
+  monthlyRent   Float
+  depositAmount Float       @default(0)
+  status        LeaseStatus @default(DRAFT)
+  signedAt      DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  ledgerEntries  LedgerEntry[]
+  renewalOffers  LeaseRenewalOffer[]
+}
+
+model LedgerEntry {
+  id            String          @id @default(cuid())
+  leaseId       String?
+  lease         Lease?          @relation(fields: [leaseId], references: [id])
+  propertyId    String?
+  property      Property?       @relation(fields: [propertyId], references: [id])
+  type          LedgerEntryType
+  amount        Float           // positive = income, negative = expense
+  currency      String          @default("USD")
+  effectiveDate DateTime
+  memo          String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Vendor {
+  id                String         @id @default(cuid())
+  name              String
+  email             String?
+  phone             String?
+  serviceCategories WorkOrderCategory[]
+  status            VendorStatus   @default(ACTIVE)
+  orgId             String?
+  org               Organization?  @relation(fields: [orgId], references: [id])
+  // Credentialing
+  licenseNumber     String?
+  licenseExpiry     DateTime?
+  insuranceCarrier  String?
+  insuranceExpiry   DateTime?
+  insuranceAmount   Float?
+  w9OnFile          Boolean        @default(false)
+  // Performance
+  performanceScore  Float?
+  reviewCount       Int            @default(0)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  propertyVendors PropertyVendor[]
+  workOrders      WorkOrder[]
+  reviews         VendorReview[]
+  pmSchedules     PMSchedule[]
+  bids            BidRequest[]
+}
+
+model PropertyVendor {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  vendorId   String
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([propertyId, vendorId])
+}
+
+model WorkOrder {
+  id               String            @id @default(cuid())
+  propertyId       String
+  property         Property          @relation(fields: [propertyId], references: [id])
+  unitId           String?
+  unit             Unit?             @relation(fields: [unitId], references: [id])
+  submittedById    String
+  submittedBy      User              @relation("WOSubmittedBy", fields: [submittedById], references: [id])
+  assignedVendorId String?
+  assignedVendor   Vendor?           @relation(fields: [assignedVendorId], references: [id])
+  title            String
+  description      String
+  category         WorkOrderCategory @default(GENERAL)
+  priority         WorkOrderPriority @default(MEDIUM)
+  status           WorkOrderStatus   @default(NEW)
+  slaDate          DateTime?
+  completedAt      DateTime?
+  signedOffAt      DateTime?
+  signedOffBy      String?
+  signOffNotes     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  costs     WorkOrderCost[]
+  documents Document[]     @relation("DocWorkOrder")
+  review    VendorReview?
+  bids      BidRequest[]
+  messages  WorkOrderMessage[]
+}
+
+model WorkOrderCost {
+  id          String            @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder         @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  costType      WorkOrderCostType @default(OTHER)
+  amount        Float
+  memo          String?
+  invoiceNumber String?
+  paid          Boolean           @default(false)
+  paidAt        DateTime?
+  createdAt     DateTime          @default(now())
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  scopeType    String   // "property" | "lease" | "workorder" | "tenant"
+  scopeId      String
+  fileUrl      String
+  fileName     String
+  uploadedById String
+  uploadedBy   User     @relation("DocUploader", fields: [uploadedById], references: [id])
+  propertyId   String?
+  property     Property? @relation("DocProperty", fields: [propertyId], references: [id])
+  workOrderId  String?
+  workOrder    WorkOrder? @relation("DocWorkOrder", fields: [workOrderId], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String
+  body       String?
+  type       String   // WO_STATUS | LEASE_EXPIRING | PAYMENT_DUE | GENERAL
+  read       Boolean  @default(false)
+  entityType String?
+  entityId   String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  actorUserId String?
+  actor       User?       @relation("AuditActor", fields: [actorUserId], references: [id])
+  action      AuditAction
+  entityType  String
+  entityId    String
+  diff        Json?
+  createdAt   DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ── Phase 4 Models ──────────────────────────────────────────────────────────
+
+model Asset {
+  id              String         @id @default(cuid())
+  propertyId      String
+  property        Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unitId          String?
+  unit            Unit?          @relation(fields: [unitId], references: [id])
+  name            String
+  category        AssetCategory
+  brand           String?
+  modelNumber     String?
+  serialNumber    String?
+  installDate     DateTime?
+  warrantyExpiry  DateTime?
+  replacementCost Float?
+  condition       AssetCondition @default(GOOD)
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  inspectionItems InspectionItem[]
+  pmSchedules     PMSchedule[]
+}
+
+model VendorReview {
+  id           String    @id @default(cuid())
+  vendorId     String
+  vendor       Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  workOrderId  String    @unique
+  workOrder    WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  reviewerId   String
+  score        Int       // 1-5 overall
+  responseTime Int?      // hours from assigned to in-progress
+  quality      Int       // 1-5
+  notes        String?
+  createdAt    DateTime  @default(now())
+}
+
+model LeaseRenewalOffer {
+  id           String              @id @default(cuid())
+  leaseId      String
+  lease        Lease               @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  offeredRent  Float
+  termMonths   Int
+  offerDate    DateTime            @default(now())
+  expiryDate   DateTime
+  status       RenewalOfferStatus  @default(PENDING)
+  notes        String?
+  respondedAt  DateTime?
+  createdAt    DateTime            @default(now())
+}
+
+model Incident {
+  id          String           @id @default(cuid())
+  propertyId  String
+  property    Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reportedBy  String
+  category    IncidentCategory
+  title       String
+  description String
+  severity    IncidentSeverity @default(MEDIUM)
+  status      IncidentStatus   @default(OPEN)
+  slaDeadline DateTime?
+  resolvedAt  DateTime?
+  resolution  String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Budget {
+  id             String          @id @default(cuid())
+  propertyId     String
+  property       Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  period         String          // "2026-02" YYYY-MM
+  category       LedgerEntryType
+  budgetedAmount Float
+  notes          String?
+  createdAt      DateTime        @default(now())
+
+  @@unique([propertyId, period, category])
+}
+
+// ── Phase 5 Models ──────────────────────────────────────────────────────────
+
+model Inspection {
+  id           String           @id @default(cuid())
+  propertyId   String
+  property     Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unitId       String?
+  unit         Unit?            @relation(fields: [unitId], references: [id])
+  type         InspectionType
+  status       InspectionStatus @default(SCHEDULED)
+  scheduledAt  DateTime
+  completedAt  DateTime?
+  conductedBy  String
+  notes        String?
+  items        InspectionItem[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model InspectionItem {
+  id           String         @id @default(cuid())
+  inspectionId String
+  inspection   Inspection     @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  assetId      String?
+  asset        Asset?         @relation(fields: [assetId], references: [id])
+  area         String
+  condition    AssetCondition
+  notes        String?
+  photoDocId   String?
+}
+
+model PMSchedule {
+  id            String    @id @default(cuid())
+  assetId       String
+  asset         Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  frequencyDays Int
+  lastRunAt     DateTime?
+  nextDueAt     DateTime
+  vendorId      String?
+  vendor        Vendor?   @relation(fields: [vendorId], references: [id])
+  autoCreateWO  Boolean   @default(true)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model BidRequest {
+  id          String    @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  vendorId    String
+  vendor      Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  status      BidStatus @default(PENDING)
+  amount      Float?
+  notes       String?
+  sentAt      DateTime  @default(now())
+  respondedAt DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model MessageThread {
+  id         String       @id @default(cuid())
+  propertyId String
+  property   Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subject    String
+  status     ThreadStatus @default(OPEN)
+  messages   Message[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model Message {
+  id        String        @id @default(cuid())
+  threadId  String
+  thread    MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId  String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime      @default(now())
+}
+
+model ComplianceItem {
+  id          String             @id @default(cuid())
+  propertyId  String
+  property    Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  title       String
+  category    ComplianceCategory
+  authority   String?
+  dueDate     DateTime
+  renewalDays Int?
+  status      ComplianceStatus   @default(PENDING)
+  completedAt DateTime?
+  docId       String?
+  notes       String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+// ── Phase 7 Models ──────────────────────────────────────────────────────────
+
+model WorkOrderMessage {
+  id          String    @id @default(cuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  authorId    String
+  body        String
+  createdAt   DateTime  @default(now())
+}
+
+// ── Phase 6 Models ──────────────────────────────────────────────────────────
+
+model TenantApplication {
+  id             String            @id @default(cuid())
+  propertyId     String
+  property       Property          @relation(fields: [propertyId], references: [id])
+  unitId         String?
+  unit           Unit?             @relation(fields: [unitId], references: [id])
+
+  // Applicant info
+  firstName      String
+  lastName       String
+  email          String
+  phone          String?
+
+  // Application details
+  desiredMoveIn  DateTime
+  desiredTerm    Int               // months
+  monthlyIncome  Float?
+  currentAddress String?
+  employer       String?
+  notes          String?
+
+  // Screening
+  status         ApplicationStatus @default(SUBMITTED)
+  reviewNotes    String?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+
+  // Outcome
+  approvedRent   Float?
+  approvedMoveIn DateTime?
+  tenantId       String?           @unique
+  tenant         Tenant?           @relation(fields: [tenantId], references: [id])
+
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+// ── Phase 8 Models ──────────────────────────────────────────────────────────
+
+model AgentAction {
+  id          String            @id @default(cuid())
+  managerId   String
+  manager     User              @relation("AgentActionManager", fields: [managerId], references: [id], onDelete: Cascade)
+  propertyId  String?
+  property    Property?         @relation("AgentActionProperty", fields: [propertyId], references: [id])
+  actionType  AgentActionType
+  status      AgentActionStatus @default(PENDING_APPROVAL)
+  title       String
+  reasoning   String
+  payload     Json
+  result      Json?
+  entityType  String?
+  entityId    String?
+  createdAt   DateTime          @default(now())
+  executedAt  DateTime?
+  respondedAt DateTime?
+
+  @@index([managerId, status])
+  @@index([managerId, createdAt])
+}
+
+model AgentSettings {
+  id               String   @id @default(cuid())
+  managerId        String   @unique
+  manager          User     @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  enabled          Boolean  @default(false)
+  autoExecuteTypes String[]
+  tone             String   @default("professional")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ── Autonomous Operations Models ─────────────────────────────────────────────
+
+model AgentPolicy {
+  id          String   @id @default(cuid())
+  scopeType   String   // "global" | "property" | "portfolio"
+  scopeId     String?  // propertyId when scopeType=property
+  isActive    Boolean  @default(true)
+  configJson  Json
+  version     Int      @default(1)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([scopeType, scopeId])
+}
+
+model AgentRun {
+  id          String    @id @default(cuid())
+  triggerType String    // "event" | "schedule" | "manual"
+  triggerRef  String?   // idempotency key / event id
+  propertyId  String?
+  status      String    @default("QUEUED") // QUEUED|RUNNING|COMPLETED|FAILED|ESCALATED
+  startedAt   DateTime?
+  completedAt DateTime?
+  summary     String?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  steps      AgentStep[]
+  actionLogs AgentActionLog[]
+  exceptions AgentException[]
+
+  @@index([status, createdAt])
+  @@index([propertyId, createdAt])
+}
+
+model AgentStep {
+  id          String    @id @default(cuid())
+  runId       String
+  run         AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  stepOrder   Int
+  name        String
+  status      String    // PLANNED|RUNNING|DONE|FAILED|SKIPPED
+  inputJson   Json?
+  outputJson  Json?
+  startedAt   DateTime?
+  completedAt DateTime?
+  error       String?
+
+  @@index([runId, stepOrder])
+}
+
+model AgentActionLog {
+  id             String   @id @default(cuid())
+  runId          String
+  run            AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  stepId         String?
+  actionType     String   // API_CALL|DECISION|ESCALATION
+  target         String
+  requestJson    Json?
+  responseJson   Json?
+  policyDecision String?  // ALLOW|APPROVAL|BLOCK
+  policyReason   String?
+  createdAt      DateTime @default(now())
+
+  @@index([runId, createdAt])
+}
+
+model AgentException {
+  id           String    @id @default(cuid())
+  runId        String?
+  run          AgentRun? @relation(fields: [runId], references: [id])
+  propertyId   String?
+  severity     String    // LOW|MEDIUM|HIGH|CRITICAL
+  category     String    // LEGAL|FINANCIAL|SAFETY|SLA|SYSTEM
+  title        String
+  details      String
+  contextJson  Json?
+  status       String    @default("OPEN") // OPEN|ACK|RESOLVED
+  requiresBy   DateTime?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@index([propertyId, status])
+}
+
+model AgentMemory {
+  id         String   @id @default(cuid())
+  scopeType  String   // property|tenant|vendor|workorder
+  scopeId    String
+  key        String
+  valueJson  Json
+  confidence Float?
+  updatedAt  DateTime @updatedAt
+
+  @@unique([scopeType, scopeId, key])
+}
