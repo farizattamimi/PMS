@@ -1,6 +1,6 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { canAccessScopedPropertyId, scopedPropertyIdsForManagerViews } from '@/lib/access'
+import { sessionProvider } from '@/lib/session-provider'
 
 const POLL_MS      = 2000   // poll every 2 s while run is active
 const MAX_MS       = 300000 // hard cap: 5 minutes
@@ -17,16 +17,17 @@ export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return new Response('Unauthorized', { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const runId = params.id
   const encoder = new TextEncoder()
 
   async function fetchRun() {
-    return prisma.agentRun.findUnique({
+    const run = await prisma.agentRun.findUnique({
       where: { id: runId },
       include: {
         steps:      { orderBy: { stepOrder: 'asc' } },
@@ -34,9 +35,13 @@ export async function GET(
         exceptions: { orderBy: { createdAt: 'asc' } },
       },
     })
+    if (!run) return null
+    if (!canAccessScopedPropertyId(scopedPropertyIds, run.propertyId)) return null
+    return run
   }
 
   let timer: ReturnType<typeof setInterval> | null = null
+  let closeTimer: ReturnType<typeof setTimeout> | null = null
   let closed = false
 
   const stream = new ReadableStream({
@@ -56,6 +61,7 @@ export async function GET(
         if (closed) return
         closed = true
         if (timer) clearInterval(timer)
+        if (closeTimer) clearTimeout(closeTimer)
         try { controller.close() } catch {}
       }
 
@@ -78,12 +84,13 @@ export async function GET(
       }, POLL_MS)
 
       // Hard cap
-      setTimeout(close, MAX_MS)
+      closeTimer = setTimeout(close, MAX_MS)
     },
 
     cancel() {
       closed = true
       if (timer) clearInterval(timer)
+      if (closeTimer) clearTimeout(closeTimer)
     },
   })
 

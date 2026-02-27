@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { scopedPropertyIdFilter, scopedPropertyIdsForManagerViews } from '@/lib/access'
+import { sessionProvider } from '@/lib/session-provider'
 
 /**
  * GET /api/agent/kpis
@@ -12,10 +12,11 @@ import { prisma } from '@/lib/prisma'
  *   propertyId — filter to one property (optional)
  */
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const { searchParams } = new URL(req.url)
   const days = Math.min(Math.max(parseInt(searchParams.get('days') ?? '30'), 1), 365)
@@ -24,10 +25,11 @@ export async function GET(req: Request) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
 
   const runWhere: Record<string, unknown> = { createdAt: { gte: since } }
-  if (propertyId) runWhere.propertyId = propertyId
+  const propertyFilter = scopedPropertyIdFilter(scopedPropertyIds, propertyId)
+  if (propertyFilter !== undefined) runWhere.propertyId = propertyFilter
 
   const exWhere: Record<string, unknown> = {}
-  if (propertyId) exWhere.propertyId = propertyId
+  if (propertyFilter !== undefined) exWhere.propertyId = propertyFilter
 
   // ── Run counts by status ─────────────────────────────────────────────────
   const allRuns = await prisma.agentRun.findMany({

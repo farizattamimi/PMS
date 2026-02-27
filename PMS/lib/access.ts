@@ -57,3 +57,35 @@ export async function messageThreadScopeWhere(
   if (!tenantId) return null
   return { tenantId }
 }
+
+export async function scopedPropertyIdsForManagerViews(session: Session): Promise<string[] | null> {
+  if (isAdmin(session)) return null
+  if (!isManager(session)) return []
+  const properties = await prisma.property.findMany({
+    where: { managerId: session.user.id },
+    select: { id: true },
+  })
+  return properties.map((p) => p.id)
+}
+
+export function scopedPropertyIdFilter(
+  scopedPropertyIds: string[] | null,
+  requestedPropertyId?: string | null
+): string | Prisma.StringNullableFilter | undefined {
+  if (scopedPropertyIds === null) {
+    return requestedPropertyId ?? undefined
+  }
+  if (requestedPropertyId) {
+    return scopedPropertyIds.includes(requestedPropertyId) ? requestedPropertyId : { in: [] }
+  }
+  return { in: scopedPropertyIds }
+}
+
+export function canAccessScopedPropertyId(
+  scopedPropertyIds: string[] | null,
+  propertyId?: string | null
+): boolean {
+  if (scopedPropertyIds === null) return true
+  if (!propertyId) return false
+  return scopedPropertyIds.includes(propertyId)
+}

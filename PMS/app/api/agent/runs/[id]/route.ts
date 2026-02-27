@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { canAccessScopedPropertyId, scopedPropertyIdsForManagerViews } from '@/lib/access'
+import { sessionProvider } from '@/lib/session-provider'
 
 // GET /api/agent/runs/[id] — full run detail with steps + action logs + exceptions
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const run = await prisma.agentRun.findUnique({
     where: { id: params.id },
@@ -23,6 +24,9 @@ export async function GET(
   })
 
   if (!run) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+  if (!canAccessScopedPropertyId(scopedPropertyIds, run.propertyId)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 

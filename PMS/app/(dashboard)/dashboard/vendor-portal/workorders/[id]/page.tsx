@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, AlertTriangle, CheckCircle, Play, PauseCircle } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -41,7 +41,7 @@ export default function VendorWODetailPage({ params }: { params: { id: string } 
   const [error, setError]     = useState('')
   const [success, setSuccess] = useState('')
 
-  async function load() {
+  const load = useCallback(async () => {
     const res = await fetch(`/api/vendor-portal/workorders/${params.id}`)
     if (res.ok) {
       const data = await res.json()
@@ -49,9 +49,9 @@ export default function VendorWODetailPage({ params }: { params: { id: string } 
       setNotes(data.signOffNotes ?? '')
     }
     setLoading(false)
-  }
+  }, [params.id])
 
-  useEffect(() => { load() }, [params.id])
+  useEffect(() => { load() }, [load])
 
   async function transition(to: Transition) {
     setSaving(true); setError(''); setSuccess('')

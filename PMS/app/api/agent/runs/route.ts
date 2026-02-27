@@ -1,16 +1,21 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createRun } from '@/lib/agent-runtime'
 import { runMaintenanceAutopilot } from '@/lib/workflows/maintenance-autopilot'
+import { sessionProvider } from '@/lib/session-provider'
+import {
+  canAccessScopedPropertyId,
+  scopedPropertyIdFilter,
+  scopedPropertyIdsForManagerViews,
+} from '@/lib/access'
 
 // GET /api/agent/runs — list runs (manager sees own property runs)
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status')
@@ -19,7 +24,8 @@ export async function GET(req: Request) {
 
   const where: Record<string, unknown> = {}
   if (status) where.status = status
-  if (propertyId) where.propertyId = propertyId
+  const propertyFilter = scopedPropertyIdFilter(scopedPropertyIds, propertyId)
+  if (propertyFilter !== undefined) where.propertyId = propertyFilter
 
   const runs = await prisma.agentRun.findMany({
     where,
@@ -35,13 +41,20 @@ export async function GET(req: Request) {
 
 // POST /api/agent/runs — manual trigger
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const body = await req.json().catch(() => ({}))
   const { propertyId, triggerType = 'manual', entityId, workflowType = 'MAINTENANCE' } = body
+  if (!propertyId) {
+    return NextResponse.json({ error: 'propertyId is required' }, { status: 400 })
+  }
+  if (!canAccessScopedPropertyId(scopedPropertyIds, propertyId)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const runId = await createRun({
     triggerType,

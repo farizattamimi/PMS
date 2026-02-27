@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { canAccessScopedPropertyId, scopedPropertyIdsForManagerViews } from '@/lib/access'
+import { sessionProvider } from '@/lib/session-provider'
 
 // POST /api/agent/exceptions/[id]/decision — attach a human decision payload
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const body = await req.json().catch(() => ({}))
   const { decision, notes } = body
@@ -22,9 +23,12 @@ export async function POST(
 
   const ex = await prisma.agentException.findUnique({
     where: { id: params.id },
-    select: { id: true, contextJson: true },
+    select: { id: true, propertyId: true, contextJson: true },
   })
   if (!ex) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!canAccessScopedPropertyId(scopedPropertyIds, ex.propertyId)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
 
   const updatedContext = {
     ...(ex.contextJson as Record<string, unknown> ?? {}),

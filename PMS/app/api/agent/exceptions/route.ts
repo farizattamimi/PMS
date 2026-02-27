@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { scopedPropertyIdFilter, scopedPropertyIdsForManagerViews } from '@/lib/access'
+import { sessionProvider } from '@/lib/session-provider'
 
 // GET /api/agent/exceptions
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status')
@@ -17,7 +18,8 @@ export async function GET(req: Request) {
 
   const where: Record<string, unknown> = {}
   if (status) where.status = status
-  if (propertyId) where.propertyId = propertyId
+  const propertyFilter = scopedPropertyIdFilter(scopedPropertyIds, propertyId)
+  if (propertyFilter !== undefined) where.propertyId = propertyFilter
   if (severity) where.severity = severity
 
   const exceptions = await prisma.agentException.findMany({

@@ -22,13 +22,30 @@ export async function POST(req: Request) {
     nodeEnv: process.env.NODE_ENV,
     providedSecret: provided,
   })
-  if (!auth.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const event: AgentEvent = await req.json().catch(() => ({}))
   if (!event.eventType) {
     return NextResponse.json({ error: 'eventType is required' }, { status: 400 })
   }
 
+  // Route to correct workflow
+  const routedWorkflow = routeEvent(event.eventType)
+  if (!routedWorkflow) {
+    return NextResponse.json({ ok: true, skipped: true, reason: 'no workflow for event type' })
+  }
+  if (routedWorkflow === 'SLA_BREACH' && (!event.propertyId || !event.entityId)) {
+    return NextResponse.json(
+      { error: 'propertyId and entityId are required for SLA_BREACH events' },
+      { status: 400 }
+    )
+  }
+  if (routedWorkflow !== 'SLA_BREACH' && !event.propertyId) {
+    return NextResponse.json(
+      { error: `propertyId is required for ${routedWorkflow} events` },
+      { status: 400 }
+    )
+  }
   const dateBucket = new Date().toISOString().slice(0, 13) // hourly bucket
   const dedupeKey = makeDedupeKey(
     'event',
@@ -43,57 +60,54 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: true, reason: 'duplicate' })
   }
 
-  // Route to correct workflow
-  const routedWorkflow = routeEvent(event.eventType)
-  if (!routedWorkflow) {
-    return NextResponse.json({ ok: true, skipped: true, reason: 'no workflow for event type' })
-  }
-
   const runId = await createRun({
     triggerType: 'event',
     triggerRef: dedupeKey,
     propertyId: event.propertyId,
   })
 
-  // Dispatch asynchronously (fire-and-forget from API response perspective)
-  if (routedWorkflow === 'MAINTENANCE' && event.propertyId) {
-    runMaintenanceAutopilot({
-      runId,
-      propertyId: event.propertyId,
-      triggerType: mapEventToTriggerType(event.eventType),
-      entityId: event.entityId ?? runId,
-    }).catch((err: Error) => {
-      console.error('[agent/events] Workflow error:', err.message)
-    })
-  }
+  // Dispatch asynchronously (fire-and-forget from API response perspective).
+  // Skip async dispatch in test mode to keep route tests deterministic.
+  if (process.env.NODE_ENV !== 'test') {
+    if (routedWorkflow === 'MAINTENANCE') {
+      runMaintenanceAutopilot({
+        runId,
+        propertyId: event.propertyId as string,
+        triggerType: mapEventToTriggerType(event.eventType),
+        entityId: event.entityId ?? runId,
+      }).catch((err: Error) => {
+        console.error('[agent/events] Workflow error:', err.message)
+      })
+    }
 
-  if (routedWorkflow === 'TENANT_COMMS' && event.propertyId) {
-    runTenantCommsAutopilot({
-      runId,
-      propertyId: event.propertyId,
-      threadId: event.entityId ?? '',
-    }).catch((err: Error) => {
-      console.error('[agent/events] TenantComms workflow error:', err.message)
-    })
-  }
+    if (routedWorkflow === 'TENANT_COMMS') {
+      runTenantCommsAutopilot({
+        runId,
+        propertyId: event.propertyId as string,
+        threadId: event.entityId ?? '',
+      }).catch((err: Error) => {
+        console.error('[agent/events] TenantComms workflow error:', err.message)
+      })
+    }
 
-  if (routedWorkflow === 'COMPLIANCE_PM' && event.propertyId) {
-    runCompliancePMAutopilot({
-      runId,
-      propertyId: event.propertyId,
-    }).catch((err: Error) => {
-      console.error('[agent/events] CompliancePM workflow error:', err.message)
-    })
-  }
+    if (routedWorkflow === 'COMPLIANCE_PM') {
+      runCompliancePMAutopilot({
+        runId,
+        propertyId: event.propertyId as string,
+      }).catch((err: Error) => {
+        console.error('[agent/events] CompliancePM workflow error:', err.message)
+      })
+    }
 
-  if (routedWorkflow === 'SLA_BREACH' && event.propertyId && event.entityId) {
-    runSLABreachAutopilot({
-      runId,
-      propertyId: event.propertyId,
-      workOrderId: event.entityId,
-    }).catch((err: Error) => {
-      console.error('[agent/events] SLABreach workflow error:', err.message)
-    })
+    if (routedWorkflow === 'SLA_BREACH') {
+      runSLABreachAutopilot({
+        runId,
+        propertyId: event.propertyId as string,
+        workOrderId: event.entityId as string,
+      }).catch((err: Error) => {
+        console.error('[agent/events] SLABreach workflow error:', err.message)
+      })
+    }
   }
 
   return NextResponse.json({ ok: true, runId, dedupeKey })

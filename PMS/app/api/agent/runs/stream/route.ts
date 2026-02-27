@@ -1,6 +1,6 @@
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { scopedPropertyIdFilter, scopedPropertyIdsForManagerViews } from '@/lib/access'
+import { sessionProvider } from '@/lib/session-provider'
 
 const POLL_MS = 3000   // poll DB every 3 seconds
 const MAX_MS  = 90000  // close after 90 s (client auto-reconnects)
@@ -17,10 +17,11 @@ const MAX_MS  = 90000  // close after 90 s (client auto-reconnects)
  *   propertyId — filter by property (optional)
  */
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return new Response('Unauthorized', { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const { searchParams } = new URL(req.url)
   const status     = searchParams.get('status') ?? undefined
@@ -31,7 +32,8 @@ export async function GET(req: Request) {
   async function fetchRuns() {
     const where: Record<string, unknown> = {}
     if (status)     where.status     = status
-    if (propertyId) where.propertyId = propertyId
+    const propertyFilter = scopedPropertyIdFilter(scopedPropertyIds, propertyId)
+    if (propertyFilter !== undefined) where.propertyId = propertyFilter
 
     return prisma.agentRun.findMany({
       where,
@@ -42,6 +44,7 @@ export async function GET(req: Request) {
   }
 
   let timer: ReturnType<typeof setInterval> | null = null
+  let closeTimer: ReturnType<typeof setTimeout> | null = null
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -64,7 +67,7 @@ export async function GET(req: Request) {
       }, POLL_MS)
 
       // Auto-close after MAX_MS to prevent stale connections
-      setTimeout(() => {
+      closeTimer = setTimeout(() => {
         if (timer) clearInterval(timer)
         try { controller.close() } catch {}
       }, MAX_MS)
@@ -72,6 +75,7 @@ export async function GET(req: Request) {
 
     cancel() {
       if (timer) clearInterval(timer)
+      if (closeTimer) clearTimeout(closeTimer)
     },
   })
 

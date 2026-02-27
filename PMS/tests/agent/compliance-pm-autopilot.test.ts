@@ -21,6 +21,8 @@ import assert from 'node:assert/strict'
 import { prisma } from '../../lib/prisma'
 import { runCompliancePMAutopilot } from '../../lib/workflows/compliance-pm-autopilot'
 
+const env = process.env as Record<string, string | undefined>
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock state
 // ─────────────────────────────────────────────────────────────────────────────
@@ -463,8 +465,10 @@ describe('CompliancePMAutopilot — integration (sequential)', { concurrency: 1 
   test('COMPLIANCE_DUE event routes to COMPLIANCE_PM (not silently dropped)', async () => {
     const origFindFirst = (prisma.agentRun as any).findFirst
     const origCreate    = (prisma.agentRun as any).create
+    const oldNodeEnv = process.env.NODE_ENV
     let runCreated = false
     try {
+      env.NODE_ENV = 'test'
       ;(prisma.agentRun as any).findFirst = async () => null
       ;(prisma.agentRun as any).create    = async () => {
         runCreated = true
@@ -491,6 +495,7 @@ describe('CompliancePMAutopilot — integration (sequential)', { concurrency: 1 
       assert.ok(data.skipped !== true, 'COMPLIANCE_DUE must NOT be silently dropped')
       assert.ok(runCreated, 'AgentRun must be created for COMPLIANCE_DUE event')
     } finally {
+      env.NODE_ENV = oldNodeEnv
       ;(prisma.agentRun as any).findFirst = origFindFirst
       ;(prisma.agentRun as any).create    = origCreate
     }

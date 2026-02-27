@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw, Activity } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -96,7 +96,7 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
   const [activeTab, setActiveTab]   = useState<'steps' | 'logs' | 'exceptions'>('steps')
   const esRef = useRef<EventSource | null>(null)
 
-  function connect() {
+  const connect = useCallback(() => {
     if (esRef.current) { esRef.current.close(); esRef.current = null }
     setLive(false)
 
@@ -120,18 +120,14 @@ export default function AgentRunDetailPage({ params }: { params: { id: string } 
 
     es.onerror = () => {
       setLive(false)
-      // Let EventSource auto-reconnect unless run is terminal
-      if (run && TERMINAL.has(run.status)) {
-        es.close()
-        esRef.current = null
-      }
+      // Let EventSource auto-reconnect
     }
-  }
+  }, [params.id])
 
   useEffect(() => {
     connect()
     return () => { esRef.current?.close(); esRef.current = null }
-  }, [params.id])
+  }, [connect])
 
   async function cancel() {
     if (!confirm('Cancel this run?')) return

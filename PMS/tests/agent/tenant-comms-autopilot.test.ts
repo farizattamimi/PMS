@@ -22,6 +22,8 @@ import { prisma } from '../../lib/prisma'
 import { anthropic } from '../../lib/ai'
 import { runTenantCommsAutopilot } from '../../lib/workflows/tenant-comms-autopilot'
 
+const env = process.env as Record<string, string | undefined>
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock state
 // ─────────────────────────────────────────────────────────────────────────────
@@ -647,8 +649,10 @@ describe('TenantCommsAutopilot — integration (sequential)', { concurrency: 1 }
   test('events route maps NEW_MESSAGE_THREAD to TENANT_COMMS (not silently dropped)', async () => {
     const origFindFirst = (prisma.agentRun as any).findFirst
     const origCreate    = (prisma.agentRun as any).create
+    const oldNodeEnv = process.env.NODE_ENV
     let runCreated = false
     try {
+      env.NODE_ENV = 'test'
       ;(prisma.agentRun as any).findFirst = async () => null  // no dedupe hit
       ;(prisma.agentRun as any).create    = async () => {
         runCreated = true
@@ -675,6 +679,7 @@ describe('TenantCommsAutopilot — integration (sequential)', { concurrency: 1 }
       assert.ok(data.skipped !== true, 'NEW_MESSAGE_THREAD must NOT be silently dropped')
       assert.ok(runCreated, 'AgentRun must be created for NEW_MESSAGE_THREAD event')
     } finally {
+      env.NODE_ENV = oldNodeEnv
       ;(prisma.agentRun as any).findFirst = origFindFirst
       ;(prisma.agentRun as any).create    = origCreate
     }
@@ -683,8 +688,10 @@ describe('TenantCommsAutopilot — integration (sequential)', { concurrency: 1 }
   test('events route maps NEW_MESSAGE to TENANT_COMMS (reply in existing thread)', async () => {
     const origFindFirst = (prisma.agentRun as any).findFirst
     const origCreate    = (prisma.agentRun as any).create
+    const oldNodeEnv = process.env.NODE_ENV
     let runCreated = false
     try {
+      env.NODE_ENV = 'test'
       ;(prisma.agentRun as any).findFirst = async () => null
       ;(prisma.agentRun as any).create    = async () => {
         runCreated = true
@@ -711,6 +718,7 @@ describe('TenantCommsAutopilot — integration (sequential)', { concurrency: 1 }
       assert.ok(data.skipped !== true, 'NEW_MESSAGE must NOT be silently dropped')
       assert.ok(runCreated, 'AgentRun must be created for NEW_MESSAGE event')
     } finally {
+      env.NODE_ENV = oldNodeEnv
       ;(prisma.agentRun as any).findFirst = origFindFirst
       ;(prisma.agentRun as any).create    = origCreate
     }
