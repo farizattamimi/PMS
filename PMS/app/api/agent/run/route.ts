@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     }
   } else {
     const session = await getServerSession(authOptions)
-    if (!session || session.user.systemRole === 'TENANT') {
+    if (!session || session.user.systemRole !== 'MANAGER') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     managerId = session.user.id

@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)

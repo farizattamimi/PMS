@@ -12,7 +12,7 @@ import {
 // GET /api/agent/runs — list runs (manager sees own property runs)
 export async function GET(req: Request) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
 // POST /api/agent/runs — manual trigger
 export async function POST(req: Request) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)

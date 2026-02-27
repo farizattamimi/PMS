@@ -6,7 +6,7 @@ import { AgentActionStatus } from '@prisma/client'
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || session.user.systemRole !== 'MANAGER') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

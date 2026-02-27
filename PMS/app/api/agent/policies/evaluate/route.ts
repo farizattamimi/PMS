@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { evaluateAction, mergePolicy, DEFAULT_POLICY } from '@/lib/policy-engine'
 import { prisma } from '@/lib/prisma'
+import { sessionProvider } from '@/lib/session-provider'
+import { canAccessScopedPropertyId, scopedPropertyIdsForManagerViews } from '@/lib/access'
 
 // POST /api/agent/policies/evaluate — dry-run an action against active policy
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  const session = await sessionProvider.getSession()
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const body = await req.json().catch(() => ({}))
   const { actionType, context, propertyId } = body
@@ -21,6 +22,9 @@ export async function POST(req: Request) {
   // Load policy for property if provided
   let policy = DEFAULT_POLICY
   if (propertyId) {
+    if (!canAccessScopedPropertyId(scopedPropertyIds, propertyId)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
     const policies = await prisma.agentPolicy.findMany({
       where: {
         isActive: true,

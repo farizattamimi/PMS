@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { sessionProvider } from '@/lib/session-provider'
+import { scopedPropertyIdsForManagerViews } from '@/lib/access'
 
 // GET /api/agent/policies
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  const session = await sessionProvider.getSession()
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const scopedPropertyIds = await scopedPropertyIdsForManagerViews(session)
 
   const { searchParams } = new URL(req.url)
   const scopeType = searchParams.get('scopeType')
@@ -17,6 +18,16 @@ export async function GET(req: Request) {
   const where: Record<string, unknown> = { isActive: true }
   if (scopeType) where.scopeType = scopeType
   if (scopeId) where.scopeId = scopeId
+
+  if (scopedPropertyIds !== null) {
+    where.OR = [
+      { scopeType: 'global' },
+      { scopeType: 'property', scopeId: { in: scopedPropertyIds } },
+    ]
+    if (scopeType === 'property' && scopeId && !scopedPropertyIds.includes(scopeId)) {
+      return NextResponse.json([])
+    }
+  }
 
   const policies = await prisma.agentPolicy.findMany({
     where,
@@ -28,7 +39,7 @@ export async function GET(req: Request) {
 
 // POST /api/agent/policies — create (versions existing policy if one exists for same scope)
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole !== 'ADMIN') {
     return NextResponse.json({ error: 'Admin only' }, { status: 403 })
   }

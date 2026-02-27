@@ -10,7 +10,6 @@ export type AgentEventType =
   | 'NEW_MESSAGE'
   | 'COMPLIANCE_DUE'
   | 'WO_SLA_BREACH'
-  | 'LEASE_EXPIRING'
 
 export interface AgentEvent {
   eventType: AgentEventType

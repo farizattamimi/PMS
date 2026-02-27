@@ -12,6 +12,8 @@ import { POST as exceptionDecisionPOST } from '@/app/api/agent/exceptions/[id]/d
 import { GET as kpisGET } from '@/app/api/agent/kpis/route'
 import { GET as runsStreamGET } from '@/app/api/agent/runs/stream/route'
 import { GET as runStreamGET } from '@/app/api/agent/runs/[id]/stream/route'
+import { GET as policiesGET } from '@/app/api/agent/policies/route'
+import { POST as policyEvaluatePOST } from '@/app/api/agent/policies/evaluate/route'
 
 function makeSession(role: 'ADMIN' | 'MANAGER' | 'TENANT', id: string): Session {
   return {
@@ -41,6 +43,20 @@ test('GET /api/agent/runs scopes manager to owned properties', async () => {
     sessionProvider.getSession = originalGetSession
     ;(prisma.property as any).findMany = originalPropertyFindMany
     ;(prisma.agentRun as any).findMany = originalRunFindMany
+  }
+})
+
+test('GET /api/agent/runs denies non-manager/operator roles', async () => {
+  const originalGetSession = sessionProvider.getSession
+  try {
+    sessionProvider.getSession = async () => ({
+      user: { id: 'vendor-1', systemRole: 'VENDOR', name: null, email: null, image: null } as any,
+      expires: '2099-01-01T00:00:00.000Z',
+    } as Session)
+    const res = await runsGET(new Request('http://localhost/api/agent/runs'))
+    assert.equal(res.status, 401)
+  } finally {
+    sessionProvider.getSession = originalGetSession
   }
 })
 
@@ -212,5 +228,59 @@ test('agent stream routes apply manager scope', async () => {
     ;(prisma.property as any).findMany = originalPropertyFindMany
     ;(prisma.agentRun as any).findMany = originalRunFindMany
     ;(prisma.agentRun as any).findUnique = originalRunFindUnique
+  }
+})
+
+test('policy routes enforce manager property scope', async () => {
+  const originalGetSession = sessionProvider.getSession
+  const originalPropertyFindMany = (prisma.property as any).findMany
+  const originalPolicyFindMany = (prisma.agentPolicy as any).findMany
+  let capturedWhere: any = null
+
+  try {
+    sessionProvider.getSession = async () => makeSession('MANAGER', 'mgr-1')
+    ;(prisma.property as any).findMany = async () => [{ id: 'p-1' }]
+    ;(prisma.agentPolicy as any).findMany = async (args: any) => {
+      capturedWhere = args.where
+      return []
+    }
+
+    const res = await policiesGET(new Request('http://localhost/api/agent/policies'))
+    assert.equal(res.status, 200)
+    assert.deepEqual(capturedWhere, {
+      isActive: true,
+      OR: [
+        { scopeType: 'global' },
+        { scopeType: 'property', scopeId: { in: ['p-1'] } },
+      ],
+    })
+  } finally {
+    sessionProvider.getSession = originalGetSession
+    ;(prisma.property as any).findMany = originalPropertyFindMany
+    ;(prisma.agentPolicy as any).findMany = originalPolicyFindMany
+  }
+})
+
+test('POST /api/agent/policies/evaluate rejects manager access to unowned property', async () => {
+  const originalGetSession = sessionProvider.getSession
+  const originalPropertyFindMany = (prisma.property as any).findMany
+
+  try {
+    sessionProvider.getSession = async () => makeSession('MANAGER', 'mgr-1')
+    ;(prisma.property as any).findMany = async () => [{ id: 'p-1' }]
+
+    const res = await policyEvaluatePOST(new Request('http://localhost/api/agent/policies/evaluate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        actionType: 'MESSAGE_SEND',
+        propertyId: 'p-999',
+        context: { intent: 'FAQ', hasLegalKeywords: false },
+      }),
+    }))
+    assert.equal(res.status, 403)
+  } finally {
+    sessionProvider.getSession = originalGetSession
+    ;(prisma.property as any).findMany = originalPropertyFindMany
   }
 })

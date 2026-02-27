@@ -3,11 +3,267 @@ import { anthropic, AI_MODEL } from './ai'
 import { writeAudit } from './audit'
 import { createNotification } from './notify'
 import { AgentAction, AgentActionType, WorkOrderCategory } from '@prisma/client'
+import { evaluateAction } from './policy-engine'
+import { loadPolicyForProperty } from './agent-runtime'
 
 export interface ExecuteResult {
   ok: boolean
   detail?: string
   error?: string
+}
+
+const LEGAL_KEYWORDS = [
+  'lawsuit',
+  'sue',
+  'attorney',
+  'lawyer',
+  'legal action',
+  'discrimination',
+  'harassment',
+  'eviction notice',
+  'habitability',
+  'uninhabitable',
+  'breach of contract',
+  'negligence',
+  'personal injury',
+  'threat',
+  'threatening',
+  'mold',
+  'retaliation',
+]
+
+async function managerOwnsProperty(managerId: string, propertyId: string): Promise<boolean> {
+  const property = await prisma.property.findFirst({
+    where: { id: propertyId, managerId },
+    select: { id: true },
+  })
+  return !!property
+}
+
+async function validateActionScope(action: AgentAction, managerId: string): Promise<ExecuteResult> {
+  const payload = action.payload as Record<string, unknown>
+
+  switch (action.actionType) {
+    case 'SEND_MESSAGE': {
+      if (typeof payload.body !== 'string' || payload.body.trim().length === 0) {
+        return { ok: false, error: 'Invalid payload: body is required' }
+      }
+      if (payload.threadId) {
+        const thread = await prisma.messageThread.findFirst({
+          where: { id: payload.threadId as string, property: { managerId } },
+          select: { id: true },
+        })
+        if (!thread) return { ok: false, error: 'Forbidden: thread is outside manager scope' }
+        return { ok: true }
+      }
+
+      const propertyId = payload.propertyId as string | undefined
+      const tenantId = payload.tenantId as string | undefined
+      if (!propertyId || !tenantId || typeof payload.subject !== 'string') {
+        return { ok: false, error: 'Invalid payload: propertyId, tenantId, and subject are required' }
+      }
+      if (!(await managerOwnsProperty(managerId, propertyId))) {
+        return { ok: false, error: 'Forbidden: property is outside manager scope' }
+      }
+      const tenant = await prisma.tenant.findFirst({
+        where: {
+          id: tenantId,
+          OR: [
+            { propertyId },
+            { leases: { some: { propertyId } } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (!tenant) return { ok: false, error: 'Forbidden: tenant is outside property scope' }
+      return { ok: true }
+    }
+
+    case 'ASSIGN_VENDOR': {
+      const workOrderId = payload.workOrderId as string | undefined
+      const vendorId = payload.vendorId as string | undefined
+      if (!workOrderId || !vendorId) {
+        return { ok: false, error: 'Invalid payload: workOrderId and vendorId are required' }
+      }
+      const wo = await prisma.workOrder.findFirst({
+        where: { id: workOrderId, property: { managerId } },
+        select: { propertyId: true },
+      })
+      if (!wo) return { ok: false, error: 'Forbidden: work order is outside manager scope' }
+      const linkedVendor = await prisma.propertyVendor.findFirst({
+        where: { propertyId: wo.propertyId, vendorId },
+        select: { id: true },
+      })
+      if (!linkedVendor) return { ok: false, error: 'Forbidden: vendor not linked to property' }
+      return { ok: true }
+    }
+
+    case 'SEND_BID_REQUEST': {
+      const workOrderId = payload.workOrderId as string | undefined
+      const vendorIds = payload.vendorIds as string[] | undefined
+      if (!workOrderId || !Array.isArray(vendorIds) || vendorIds.length === 0) {
+        return { ok: false, error: 'Invalid payload: workOrderId and vendorIds are required' }
+      }
+      const wo = await prisma.workOrder.findFirst({
+        where: { id: workOrderId, property: { managerId } },
+        select: { propertyId: true },
+      })
+      if (!wo) return { ok: false, error: 'Forbidden: work order is outside manager scope' }
+      const linkedCount = await prisma.propertyVendor.count({
+        where: { propertyId: wo.propertyId, vendorId: { in: vendorIds } },
+      })
+      if (linkedCount !== vendorIds.length) {
+        return { ok: false, error: 'Forbidden: one or more vendors are not linked to property' }
+      }
+      return { ok: true }
+    }
+
+    case 'ACCEPT_BID': {
+      const bidId = payload.bidId as string | undefined
+      if (!bidId) return { ok: false, error: 'Invalid payload: bidId is required' }
+      const bid = await prisma.bidRequest.findFirst({
+        where: { id: bidId, workOrder: { property: { managerId } } },
+        select: { id: true },
+      })
+      if (!bid) return { ok: false, error: 'Forbidden: bid is outside manager scope' }
+      return { ok: true }
+    }
+
+    case 'SEND_RENEWAL_OFFER': {
+      const leaseId = payload.leaseId as string | undefined
+      if (!leaseId) return { ok: false, error: 'Invalid payload: leaseId is required' }
+      const lease = await prisma.lease.findFirst({
+        where: {
+          id: leaseId,
+          OR: [
+            { property: { managerId } },
+            { unit: { property: { managerId } } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (!lease) return { ok: false, error: 'Forbidden: lease is outside manager scope' }
+      return { ok: true }
+    }
+
+    case 'CREATE_WORK_ORDER': {
+      const propertyId = payload.propertyId as string | undefined
+      if (!propertyId) return { ok: false, error: 'Invalid payload: propertyId is required' }
+      if (!(await managerOwnsProperty(managerId, propertyId))) {
+        return { ok: false, error: 'Forbidden: property is outside manager scope' }
+      }
+      if (payload.unitId) {
+        const unit = await prisma.unit.findFirst({
+          where: { id: payload.unitId as string, propertyId },
+          select: { id: true },
+        })
+        if (!unit) return { ok: false, error: 'Forbidden: unit is outside property scope' }
+      }
+      return { ok: true }
+    }
+
+    case 'CLOSE_THREAD': {
+      const threadId = payload.threadId as string | undefined
+      if (!threadId) return { ok: false, error: 'Invalid payload: threadId is required' }
+      const thread = await prisma.messageThread.findFirst({
+        where: { id: threadId, property: { managerId } },
+        select: { id: true },
+      })
+      if (!thread) return { ok: false, error: 'Forbidden: thread is outside manager scope' }
+      return { ok: true }
+    }
+
+    default:
+      return { ok: false, error: `Unknown action type: ${action.actionType}` }
+  }
+}
+
+async function autoExecutionPolicyDecision(action: AgentAction): Promise<{ allow: boolean; reason: string }> {
+  const payload = action.payload as Record<string, unknown>
+
+  switch (action.actionType) {
+    case 'CREATE_WORK_ORDER': {
+      const propertyId = payload.propertyId as string | undefined
+      if (!propertyId) return { allow: false, reason: 'Missing propertyId for policy evaluation' }
+      const policy = await loadPolicyForProperty(propertyId)
+      const priority = (payload.priority as string) ?? 'MEDIUM'
+      const result = evaluateAction({ actionType: 'WO_CREATE', context: { priority } }, policy)
+      return { allow: result.decision === 'ALLOW', reason: result.reason }
+    }
+
+    case 'ASSIGN_VENDOR': {
+      const workOrderId = payload.workOrderId as string | undefined
+      const vendorId = payload.vendorId as string | undefined
+      if (!workOrderId || !vendorId) {
+        return { allow: false, reason: 'Missing workOrderId/vendorId for policy evaluation' }
+      }
+      const wo = await prisma.workOrder.findUnique({
+        where: { id: workOrderId },
+        select: { propertyId: true, category: true, priority: true },
+      })
+      if (!wo) return { allow: false, reason: 'Work order not found for policy evaluation' }
+      const vendorOpenWOCount = await prisma.workOrder.count({
+        where: {
+          assignedVendorId: vendorId,
+          status: { notIn: ['COMPLETED', 'CANCELED'] },
+        },
+      })
+      const policy = await loadPolicyForProperty(wo.propertyId)
+      const result = evaluateAction(
+        {
+          actionType: 'WO_ASSIGN_VENDOR',
+          context: {
+            category: wo.category,
+            priority: wo.priority,
+            vendorOpenWOCount,
+          },
+        },
+        policy
+      )
+      return { allow: result.decision === 'ALLOW', reason: result.reason }
+    }
+
+    case 'SEND_BID_REQUEST': {
+      const workOrderId = payload.workOrderId as string | undefined
+      if (!workOrderId) return { allow: false, reason: 'Missing workOrderId for policy evaluation' }
+      const wo = await prisma.workOrder.findUnique({
+        where: { id: workOrderId },
+        select: { propertyId: true },
+      })
+      if (!wo) return { allow: false, reason: 'Work order not found for policy evaluation' }
+      const policy = await loadPolicyForProperty(wo.propertyId)
+      const result = evaluateAction({ actionType: 'WO_BID_REQUEST', context: {} }, policy)
+      return { allow: result.decision === 'ALLOW', reason: result.reason }
+    }
+
+    case 'SEND_MESSAGE': {
+      let propertyId = action.propertyId ?? null
+      if (!propertyId && payload.threadId) {
+        const thread = await prisma.messageThread.findUnique({
+          where: { id: payload.threadId as string },
+          select: { propertyId: true },
+        })
+        propertyId = thread?.propertyId ?? null
+      }
+      if (!propertyId && payload.propertyId) propertyId = payload.propertyId as string
+      if (!propertyId) return { allow: false, reason: 'Missing property scope for message policy evaluation' }
+      const policy = await loadPolicyForProperty(propertyId)
+      const body = String(payload.body ?? '').toLowerCase()
+      const hasLegalKeywords = LEGAL_KEYWORDS.some((kw) => body.includes(kw)) || !!payload.hasLegalKeywords
+      const intent = typeof payload.intent === 'string' ? payload.intent : 'OTHER'
+      const result = evaluateAction(
+        { actionType: 'MESSAGE_SEND', context: { intent, hasLegalKeywords } },
+        policy
+      )
+      return { allow: result.decision === 'ALLOW', reason: result.reason }
+    }
+
+    default:
+      return {
+        allow: false,
+        reason: `Auto-execution is disabled for ${action.actionType}; manager approval required`,
+      }
+  }
 }
 
 // ── executeAction ─────────────────────────────────────────────────────────────
@@ -17,6 +273,12 @@ export async function executeAction(
   actorUserId: string,
 ): Promise<ExecuteResult> {
   try {
+    if (action.managerId !== actorUserId) {
+      return { ok: false, error: 'Forbidden: action manager mismatch' }
+    }
+    const scopeResult = await validateActionScope(action, actorUserId)
+    if (!scopeResult.ok) return scopeResult
+
     const payload = action.payload as Record<string, unknown>
 
     switch (action.actionType) {
@@ -459,27 +721,49 @@ Be specific and actionable. Only propose actions that are clearly needed based o
               managerId,
               propertyId: input.propertyId as string | undefined,
               actionType,
-              status: isAutoExecute ? 'AUTO_EXECUTED' : 'PENDING_APPROVAL',
+              status: 'PENDING_APPROVAL',
               title: input.title as string,
               reasoning: input.reasoning as string,
               payload: input.payload as any,
               entityType: input.entityType as string | undefined,
               entityId: input.entityId as string | undefined,
-              executedAt: isAutoExecute ? new Date() : undefined,
             },
           })
 
           if (isAutoExecute) {
-            const execResult = await executeAction(created, managerId)
-            await prisma.agentAction.update({
-              where: { id: created.id },
-              data: {
-                result: execResult as any,
-                status: execResult.ok ? 'AUTO_EXECUTED' : 'FAILED',
-              },
-            })
-            counters.actionsExecuted++
-            result = { queued: true, autoExecuted: true, actionId: created.id, execResult }
+            const policyGate = await autoExecutionPolicyDecision(created)
+            if (!policyGate.allow) {
+              await prisma.agentAction.update({
+                where: { id: created.id },
+                data: {
+                  status: 'PENDING_APPROVAL',
+                  result: {
+                    autoExecutionBlocked: true,
+                    reason: policyGate.reason,
+                  } as any,
+                },
+              })
+              counters.actionsQueued++
+              result = {
+                queued: true,
+                autoExecuted: false,
+                actionId: created.id,
+                reason: policyGate.reason,
+              }
+            } else {
+              const execResult = await executeAction(created, managerId)
+              await prisma.agentAction.update({
+                where: { id: created.id },
+                data: {
+                  result: execResult as any,
+                  status: execResult.ok ? 'AUTO_EXECUTED' : 'FAILED',
+                  executedAt: new Date(),
+                  respondedAt: new Date(),
+                },
+              })
+              counters.actionsExecuted++
+              result = { queued: true, autoExecuted: true, actionId: created.id, execResult }
+            }
           } else {
             counters.actionsQueued++
             result = { queued: true, autoExecuted: false, actionId: created.id }
