@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, CheckCircle, XCircle, Star, Wand2 } from 'lucide-react'
+import { ChevronLeft, CheckCircle, XCircle, Star, Wand2, KeyRound } from 'lucide-react'
+import { Modal } from '@/components/ui/Modal'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
@@ -37,6 +38,38 @@ export default function VendorDetailPage() {
     w9OnFile: false,
   })
   const [saving, setSaving] = useState(false)
+
+  // Portal invite
+  const [showInvite, setShowInvite]     = useState(false)
+  const [inviteForm, setInviteForm]     = useState({ name: '', email: '', password: '' })
+  const [inviteSaving, setInviteSaving] = useState(false)
+  const [inviteError, setInviteError]   = useState('')
+  const [inviteSuccess, setInviteSuccess] = useState('')
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault()
+    setInviteSaving(true); setInviteError(''); setInviteSuccess('')
+    const res = await fetch(`/api/vendors/${id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(inviteForm),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      setInviteSuccess(`Portal account created for ${data.email}`)
+      setInviteForm({ name: '', email: '', password: '' })
+      load()
+    } else {
+      setInviteError(data.error ?? 'Failed to create account')
+    }
+    setInviteSaving(false)
+  }
+
+  async function handleRevokeAccess() {
+    if (!confirm('Remove portal access for this vendor?')) return
+    await fetch(`/api/vendors/${id}/invite`, { method: 'DELETE' })
+    load()
+  }
 
   // AI vendor narrative
   const [vendorNarrative, setVendorNarrative] = useState('')
@@ -209,6 +242,39 @@ export default function VendorDetailPage() {
             )}
           </Card>
 
+          {/* Portal Access */}
+          <Card>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Portal Access</h3>
+              <KeyRound className="h-4 w-4 text-gray-400" />
+            </div>
+            {vendor.userId ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-green-700">
+                  <CheckCircle className="h-4 w-4" />
+                  Portal account active
+                </div>
+                <button
+                  onClick={handleRevokeAccess}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  Revoke access
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-400">No portal account yet.</p>
+                <Button size="sm" onClick={() => {
+                  setInviteForm({ name: vendor.name, email: vendor.email ?? '', password: '' })
+                  setInviteError(''); setInviteSuccess(''); setShowInvite(true)
+                }}>
+                  Invite to Portal
+                </Button>
+              </div>
+            )}
+            {inviteSuccess && <p className="text-xs text-green-600 mt-2">{inviteSuccess}</p>}
+          </Card>
+
           {/* Properties */}
           <Card>
             <h3 className="font-semibold text-gray-900 mb-3">Assigned Properties</h3>
@@ -272,6 +338,33 @@ export default function VendorDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Invite modal */}
+      <Modal isOpen={showInvite} onClose={() => setShowInvite(false)} title="Invite Vendor to Portal">
+        <form onSubmit={handleInvite} className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Create a login account for this vendor. They will be able to view and update their assigned work orders.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <input className={INPUT_CLS} value={inviteForm.name} onChange={e => setInviteForm({...inviteForm, name: e.target.value})} required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email (login)</label>
+            <input type="email" className={INPUT_CLS} value={inviteForm.email} onChange={e => setInviteForm({...inviteForm, email: e.target.value})} required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
+            <input type="password" className={INPUT_CLS} value={inviteForm.password} onChange={e => setInviteForm({...inviteForm, password: e.target.value})} minLength={8} required />
+            <p className="text-xs text-gray-400 mt-1">Minimum 8 characters. Share securely with the vendor.</p>
+          </div>
+          {inviteError && <p className="text-sm text-red-600">{inviteError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setShowInvite(false)}>Cancel</Button>
+            <Button type="submit" disabled={inviteSaving}>{inviteSaving ? 'Creating…' : 'Create Portal Account'}</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

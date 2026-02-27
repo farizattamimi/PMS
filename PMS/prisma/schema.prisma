@@ -13,6 +13,7 @@ enum SystemRole {
   ADMIN
   MANAGER
   TENANT
+  VENDOR
 }
 
 enum OrgType {
@@ -283,6 +284,7 @@ model User {
 
   managedProperties Property[]  @relation("PropertyManager")
   tenant            Tenant?
+  vendor            Vendor?
   submittedWorkOrders WorkOrder[] @relation("WOSubmittedBy")
   auditLogs         AuditLog[]  @relation("AuditActor")
   uploadedDocs      Document[]  @relation("DocUploader")
@@ -453,6 +455,9 @@ model Vendor {
   insuranceExpiry   DateTime?
   insuranceAmount   Float?
   w9OnFile          Boolean        @default(false)
+  // Portal access
+  userId            String?        @unique
+  user              User?          @relation(fields: [userId], references: [id])
   // Performance
   performanceScore  Float?
   reviewCount       Int            @default(0)

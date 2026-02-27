@@ -23,6 +23,18 @@ export default withAuth(
       }
     }
 
+    // Vendor can only access vendor portal routes
+    if (token?.systemRole === 'VENDOR') {
+      const allowedPaths = [
+        '/dashboard',
+        '/dashboard/vendor-portal',
+      ]
+      const isAllowed = allowedPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
+      if (!isAllowed && pathname.startsWith('/dashboard')) {
+        return NextResponse.redirect(new URL('/dashboard/vendor-portal', req.url))
+      }
+    }
+
     return NextResponse.next()
   },
   {

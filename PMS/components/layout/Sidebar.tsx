@@ -26,6 +26,7 @@ import {
   Gauge,
   CalendarDays,
   BellRing,
+  HardHat,
 } from 'lucide-react'
 
 interface NavItem {
@@ -54,6 +55,9 @@ const navItems: NavItem[] = [
   { href: '/dashboard/agent-kpis',       label: 'KPI Dashboard',    icon: Gauge,        roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-settings',   label: 'Agent Settings',   icon: Settings2,    roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/admin', label: 'Admin', icon: Settings, roles: ['ADMIN'] },
+  // Vendor-only
+  { href: '/dashboard/vendor-portal',              label: 'My Work Orders', icon: HardHat,  roles: ['VENDOR'] },
+  { href: '/dashboard/vendor-portal/profile',      label: 'My Profile',     icon: Settings2, roles: ['VENDOR'] },
   // Tenant-only
   { href: '/dashboard/my-lease', label: 'My Lease', icon: FileText, roles: ['TENANT'] },
   { href: '/dashboard/my-payments', label: 'My Payments', icon: CreditCard, roles: ['TENANT'] },

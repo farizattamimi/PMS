@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
 import { DoorOpen, Wrench, TrendingUp, AlertTriangle, Clock, Home, CreditCard, Plus, FileText, ExternalLink, X, Paperclip, Wand2 } from 'lucide-react'
@@ -468,6 +469,13 @@ function TenantDashboard() {
 
 export default function DashboardPage() {
   const { data: session, status } = useSession()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user?.systemRole === 'VENDOR') {
+      router.replace('/dashboard/vendor-portal')
+    }
+  }, [status, session, router])
 
   if (status === 'loading') return (
     <div className="flex items-center justify-center h-64">
@@ -475,5 +483,7 @@ export default function DashboardPage() {
     </div>
   )
 
-  return session?.user?.systemRole === 'TENANT' ? <TenantDashboard /> : <ManagerDashboard />
+  const role = session?.user?.systemRole
+  if (role === 'VENDOR') return null   // redirecting via useEffect
+  return role === 'TENANT' ? <TenantDashboard /> : <ManagerDashboard />
 }

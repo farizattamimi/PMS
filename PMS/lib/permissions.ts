@@ -43,6 +43,10 @@ export const ROLE_PERMISSIONS: Record<SystemRole, Permission[]> = {
     Permission.LEASES_READ,
     Permission.LEDGER_READ,
   ],
+  VENDOR: [
+    Permission.WORKORDERS_READ,
+    Permission.WORKORDERS_WRITE,
+  ],
 }
 
 export function hasPermission(role: SystemRole, perm: Permission): boolean {
