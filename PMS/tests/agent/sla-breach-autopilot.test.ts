@@ -115,6 +115,8 @@ function installMocks(ms: MockState) {
     leaseFindFirst:        (prisma.lease as any).findFirst,
     agentMemoryFindUnique: (prisma.agentMemory as any).findUnique,
     agentMemoryUpsert:     (prisma.agentMemory as any).upsert,
+    userFindUnique:        (prisma.user as any).findUnique,
+    notifPrefFindMany:     (prisma.notificationPreference as any).findMany,
   }
 
   // Run lifecycle
@@ -168,6 +170,13 @@ function installMocks(ms: MockState) {
   ;(prisma.agentMemory as any).findUnique = async () => null
   ;(prisma.agentMemory as any).upsert     = async () => ({})
 
+  // User lookup (used by deliverNotification) — return active mock user
+  ;(prisma.user as any).findUnique = async () => ({
+    id: 'manager-1', email: 'manager@test.com', phone: null, isActive: true,
+  })
+  // Notification preferences — use defaults (IN_APP=on)
+  ;(prisma.notificationPreference as any).findMany = async () => []
+
   return saved
 }
 
@@ -186,6 +195,8 @@ function restoreMocks(saved: ReturnType<typeof installMocks>) {
   ;(prisma.lease as any).findFirst          = saved.leaseFindFirst
   ;(prisma.agentMemory as any).findUnique   = saved.agentMemoryFindUnique
   ;(prisma.agentMemory as any).upsert       = saved.agentMemoryUpsert
+  ;(prisma.user as any).findUnique          = saved.userFindUnique
+  ;(prisma.notificationPreference as any).findMany = saved.notifPrefFindMany
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -108,6 +108,8 @@ function installMocks(ms: MockState) {
     pMScheduleFindMany:       (prisma.pMSchedule as any).findMany,
     agentMemoryFindUnique:    (prisma.agentMemory as any).findUnique,
     agentMemoryUpsert:        (prisma.agentMemory as any).upsert,
+    userFindUnique:           (prisma.user as any).findUnique,
+    notifPrefFindMany:        (prisma.notificationPreference as any).findMany,
   }
 
   // Run lifecycle
@@ -163,6 +165,13 @@ function installMocks(ms: MockState) {
   ;(prisma.agentMemory as any).findUnique = async () => null
   ;(prisma.agentMemory as any).upsert     = async () => ({})
 
+  // User lookup (used by deliverNotification) — return active mock user
+  ;(prisma.user as any).findUnique = async () => ({
+    id: 'manager-1', email: 'manager@test.com', phone: null, isActive: true,
+  })
+  // Notification preferences — use defaults (IN_APP=on)
+  ;(prisma.notificationPreference as any).findMany = async () => []
+
   return saved
 }
 
@@ -181,6 +190,8 @@ function restoreMocks(saved: ReturnType<typeof installMocks>) {
   ;(prisma.pMSchedule as any).findMany      = saved.pMScheduleFindMany
   ;(prisma.agentMemory as any).findUnique   = saved.agentMemoryFindUnique
   ;(prisma.agentMemory as any).upsert       = saved.agentMemoryUpsert
+  ;(prisma.user as any).findUnique          = saved.userFindUnique
+  ;(prisma.notificationPreference as any).findMany = saved.notifPrefFindMany
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -465,6 +476,7 @@ describe('CompliancePMAutopilot — integration (sequential)', { concurrency: 1 
   test('COMPLIANCE_DUE event routes to COMPLIANCE_PM (not silently dropped)', async () => {
     const origFindFirst = (prisma.agentRun as any).findFirst
     const origCreate    = (prisma.agentRun as any).create
+    const origUpdate    = (prisma.agentRun as any).update
     const oldNodeEnv = process.env.NODE_ENV
     let runCreated = false
     try {
@@ -474,6 +486,7 @@ describe('CompliancePMAutopilot — integration (sequential)', { concurrency: 1 
         runCreated = true
         return { id: 'run-routed-compliance' }
       }
+      ;(prisma.agentRun as any).update    = async () => ({})
 
       const { POST: eventsPost } = await import('../../app/api/agent/events/route')
       const req = new Request('http://localhost/api/agent/events', {
@@ -498,6 +511,7 @@ describe('CompliancePMAutopilot — integration (sequential)', { concurrency: 1 
       env.NODE_ENV = oldNodeEnv
       ;(prisma.agentRun as any).findFirst = origFindFirst
       ;(prisma.agentRun as any).create    = origCreate
+      ;(prisma.agentRun as any).update    = origUpdate
     }
   })
 
