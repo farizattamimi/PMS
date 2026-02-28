@@ -6,10 +6,11 @@ import { writeAudit } from '@/lib/audit'
 import { deliverNotification } from '@/lib/deliver'
 import { getScreeningProvider } from '@/lib/screening'
 import { screeningCompleteEmail, screeningCompleteSms } from '@/lib/email'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -21,6 +22,10 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     },
   })
   if (!application) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (!(await assertManagerOwnsProperty(session, application.propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   if (application.status === 'WITHDRAWN' || application.status === 'DENIED') {
     return NextResponse.json(
@@ -102,8 +107,18 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const application = await prisma.tenantApplication.findUnique({
+    where: { id: params.id },
+    select: { propertyId: true },
+  })
+  if (!application) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (!(await assertManagerOwnsProperty(session, application.propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const reports = await prisma.screeningReport.findMany({

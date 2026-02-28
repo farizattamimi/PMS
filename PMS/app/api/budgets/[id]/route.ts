@@ -3,15 +3,20 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const budget = await prisma.budget.findUnique({ where: { id: params.id } })
   if (!budget) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (!(await assertManagerOwnsProperty(session, budget.propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const body = await req.json()
   const updateData: any = {}
@@ -33,12 +38,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const budget = await prisma.budget.findUnique({ where: { id: params.id } })
   if (!budget) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (!(await assertManagerOwnsProperty(session, budget.propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   await prisma.budget.delete({ where: { id: params.id } })
 

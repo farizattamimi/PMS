@@ -6,7 +6,7 @@ import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -29,7 +29,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -65,7 +65,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

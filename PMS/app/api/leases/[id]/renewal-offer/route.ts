@@ -7,7 +7,7 @@ import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -66,6 +66,29 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await sessionProvider.getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // TENANT can only see offers for their own lease
+  if (session.user.systemRole === 'TENANT') {
+    const lease = await prisma.lease.findUnique({
+      where: { id: params.id },
+      include: { tenant: { select: { userId: true } } },
+    })
+    if (!lease || lease.tenant.userId !== session.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  } else if (!['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  } else if (session.user.systemRole === 'MANAGER') {
+    const lease = await prisma.lease.findUnique({
+      where: { id: params.id },
+      include: { unit: { select: { propertyId: true } } },
+    })
+    if (!lease) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const propertyId = lease.propertyId ?? lease.unit?.propertyId
+    if (propertyId && !(await assertManagerOwnsProperty(session, propertyId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
 
   const offers = await prisma.leaseRenewalOffer.findMany({
     where: { leaseId: params.id },

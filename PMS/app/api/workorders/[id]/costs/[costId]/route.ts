@@ -10,7 +10,7 @@ export async function PATCH(
   { params }: { params: { id: string; costId: string } }
 ) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -29,7 +29,7 @@ export interface CalendarEvent {
  */
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

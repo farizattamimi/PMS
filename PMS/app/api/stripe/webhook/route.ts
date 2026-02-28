@@ -295,6 +295,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true })
   }
 
+  // ── customer.subscription.deleted ─────────────────────────────────────────
+  if (event.type === 'customer.subscription.deleted') {
+    const subscription = event.data.object as Stripe.Subscription
+    const lease = await prisma.lease.findUnique({
+      where: { stripeSubscriptionId: subscription.id },
+    })
+    if (lease) {
+      await prisma.lease.update({
+        where: { id: lease.id },
+        data: {
+          stripeSubscriptionStatus: 'canceled',
+          stripeSubscriptionId: null,
+        },
+      })
+      await writeAudit({
+        action: 'UPDATE',
+        entityType: 'Lease',
+        entityId: lease.id,
+        diff: { event: 'subscription_deleted', stripeSubscriptionId: subscription.id },
+      })
+    }
+    return NextResponse.json({ received: true })
+  }
+
   // ── charge.succeeded ──────────────────────────────────────────────────────
   if (event.type === 'charge.succeeded') {
     const charge = event.data.object as Stripe.Charge

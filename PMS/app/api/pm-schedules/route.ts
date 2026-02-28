@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server'
 import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function GET(req: Request) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole === 'TENANT') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -49,6 +50,17 @@ export async function POST(req: Request) {
 
   if (!assetId || !title || !frequencyDays || !nextDueAt) {
     return NextResponse.json({ error: 'assetId, title, frequencyDays, nextDueAt required' }, { status: 400 })
+  }
+
+  // MANAGER can only create PM schedules for assets in their properties
+  if (session.user.systemRole === 'MANAGER') {
+    const asset = await prisma.asset.findUnique({
+      where: { id: assetId },
+      select: { propertyId: true },
+    })
+    if (!asset || !(await assertManagerOwnsProperty(session, asset.propertyId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
   }
 
   const freq = Number(frequencyDays)

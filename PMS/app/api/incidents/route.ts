@@ -3,6 +3,7 @@ import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { publishAgentEvent } from '@/lib/agent-events'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 // SLA hours by severity
 const SLA_HOURS: Record<string, number> = {
@@ -57,6 +58,13 @@ export async function POST(req: Request) {
 
   if (!propertyId || !category || !title || !description) {
     return NextResponse.json({ error: 'propertyId, category, title, and description are required' }, { status: 400 })
+  }
+
+  // MANAGER can only create incidents for their own properties
+  if (session.user.systemRole === 'MANAGER') {
+    if (!(await assertManagerOwnsProperty(session, propertyId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
   }
 
   if (!VALID_SEVERITIES.includes(severity)) {
