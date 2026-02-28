@@ -5,19 +5,24 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
   padding?: 'none' | 'sm' | 'md' | 'lg'
 }
 
-export function Card({ className, padding = 'md', children, ...props }: CardProps) {
+export function Card({ className, padding = 'md', style, children, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        'bg-white rounded-xl shadow-sm border border-gray-200',
+        'rounded-xl',
         {
           'p-0': padding === 'none',
           'p-4': padding === 'sm',
-          'p-6': padding === 'md',
-          'p-8': padding === 'lg',
+          'p-5': padding === 'md',
+          'p-7': padding === 'lg',
         },
         className
       )}
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        ...style,
+      }}
       {...props}
     >
       {children}
@@ -27,7 +32,7 @@ export function Card({ className, padding = 'md', children, ...props }: CardProp
 
 export function CardHeader({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('flex items-center justify-between mb-4', className)} {...props}>
+    <div className={cn('flex items-center justify-between', className)} {...props}>
       {children}
     </div>
   )
@@ -35,7 +40,11 @@ export function CardHeader({ className, children, ...props }: HTMLAttributes<HTM
 
 export function CardTitle({ className, children, ...props }: HTMLAttributes<HTMLHeadingElement>) {
   return (
-    <h3 className={cn('text-lg font-semibold text-gray-900', className)} {...props}>
+    <h3
+      className={cn('text-[13px] font-semibold', className)}
+      style={{ color: 'var(--text-primary)' }}
+      {...props}
+    >
       {children}
     </h3>
   )

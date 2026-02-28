@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Topbar } from '@/components/layout/Topbar'
 import { TenantChatWidget } from '@/components/layout/TenantChatWidget'
+import { CommandPaletteProvider } from '@/components/layout/CommandPalette'
 
 interface OrgBranding {
   name?: string
@@ -34,34 +35,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (branding.accentColor) cssVars['--org-accent'] = branding.accentColor
 
   return (
-    <div className="flex h-screen bg-gray-50" style={cssVars as React.CSSProperties}>
-      {/* Desktop sidebar */}
-      <div className="hidden md:block">
-        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} branding={branding} />
-      </div>
-
-      {/* Mobile drawer overlay */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="fixed inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-          <div className="fixed inset-y-0 left-0 z-50 w-64">
-            <Sidebar
-              collapsed={false}
-              onToggle={() => setMobileOpen(false)}
-              branding={branding}
-              onNavClick={() => setMobileOpen(false)}
-            />
-          </div>
+    <CommandPaletteProvider>
+      <div
+        className="flex h-screen overflow-hidden"
+        style={{ background: 'var(--bg)', ...cssVars as React.CSSProperties }}
+      >
+        {/* Desktop sidebar */}
+        <div className="hidden md:block flex-shrink-0">
+          <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} branding={branding} />
         </div>
-      )}
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar onMenuClick={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {children}
-        </main>
+        {/* Mobile drawer overlay */}
+        {mobileOpen && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            <div
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setMobileOpen(false)}
+            />
+            <div className="fixed inset-y-0 left-0 z-50 w-56">
+              <Sidebar
+                collapsed={false}
+                onToggle={() => setMobileOpen(false)}
+                branding={branding}
+                onNavClick={() => setMobileOpen(false)}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <Topbar onMenuClick={() => setMobileOpen(true)} />
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+            {children}
+          </main>
+        </div>
+
+        {isTenant && <TenantChatWidget />}
       </div>
-      {isTenant && <TenantChatWidget />}
-    </div>
+    </CommandPaletteProvider>
   )
 }

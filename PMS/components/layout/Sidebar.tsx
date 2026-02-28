@@ -4,77 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
-import {
-  LayoutDashboard,
-  Building2,
-  Wrench,
-  Users2,
-  BarChart3,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  CreditCard,
-  AlertTriangle,
-  MessageSquare,
-  ShieldCheck,
-  ClipboardCheck,
-  Bot,
-  Settings2,
-  Activity,
-  AlertOctagon,
-  Gauge,
-  CalendarDays,
-  BellRing,
-  HardHat,
-  Bell,
-  Banknote,
-  ScrollText,
-  Shield,
-} from 'lucide-react'
-
-interface NavItem {
-  href: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  roles?: string[]
-}
-
-const navItems: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'TENANT', 'VENDOR', 'OWNER'] },
-  { href: '/dashboard/properties', label: 'Properties', icon: Building2, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/workorders', label: 'Work Orders', icon: Wrench, roles: ['ADMIN', 'MANAGER', 'TENANT'] },
-  { href: '/dashboard/vendors', label: 'Vendors', icon: Users2, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/applications', label: 'Applications', icon: FileText, roles: ['ADMIN', 'MANAGER', 'TENANT'] },
-  { href: '/dashboard/incidents', label: 'Incidents', icon: AlertTriangle, roles: ['ADMIN', 'MANAGER', 'TENANT'] },
-  { href: '/dashboard/inspections', label: 'Inspections', icon: ClipboardCheck, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/compliance', label: 'Compliance', icon: ShieldCheck, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/messages', label: 'Messages', icon: MessageSquare, roles: ['ADMIN', 'MANAGER', 'TENANT'] },
-  { href: '/dashboard/calendar',     label: 'Calendar',     icon: CalendarDays, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/bulk-notify',  label: 'Bulk Notify',  icon: BellRing,     roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/reporting', label: 'Reporting', icon: BarChart3, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/agent-inbox',      label: 'Agent Inbox',      icon: Bot,          roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/agent-runs',       label: 'Agent Runs',       icon: Activity,     roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/agent-exceptions', label: 'Exceptions',       icon: AlertOctagon, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/agent-kpis',       label: 'KPI Dashboard',    icon: Gauge,        roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/agent-settings',   label: 'Agent Settings',   icon: Settings2,    roles: ['ADMIN'] },
-  { href: '/dashboard/notification-preferences', label: 'Preferences', icon: Bell, roles: ['ADMIN', 'MANAGER', 'TENANT', 'VENDOR'] },
-  { href: '/dashboard/distributions', label: 'Distributions', icon: Banknote, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/admin/audit-log', label: 'Audit Log', icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
-  { href: '/dashboard/settings/security', label: 'Security', icon: Shield, roles: ['ADMIN', 'MANAGER', 'TENANT', 'VENDOR', 'OWNER'] },
-  { href: '/dashboard/admin', label: 'Admin', icon: Settings, roles: ['ADMIN'] },
-  // Owner-only
-  { href: '/dashboard/owner-portal', label: 'My Properties', icon: Building2, roles: ['OWNER'] },
-  { href: '/dashboard/owner-portal/distributions', label: 'Distributions', icon: Banknote, roles: ['OWNER'] },
-  // Vendor-only
-  { href: '/dashboard/vendor-portal',              label: 'My Work Orders', icon: HardHat,  roles: ['VENDOR'] },
-  { href: '/dashboard/vendor-portal/profile',      label: 'My Profile',     icon: Settings2, roles: ['VENDOR'] },
-  // Tenant-only
-  { href: '/dashboard/my-lease', label: 'My Lease', icon: FileText, roles: ['TENANT'] },
-  { href: '/dashboard/my-payments', label: 'My Payments', icon: CreditCard, roles: ['TENANT'] },
-  { href: '/dashboard/my-maintenance', label: 'My Maintenance', icon: Wrench, roles: ['TENANT'] },
-  { href: '/dashboard/my-onboarding', label: 'My Onboarding', icon: ClipboardCheck, roles: ['TENANT'] },
-]
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { navItems, GROUP_LABELS, GROUP_ORDER } from '@/lib/nav-items'
 
 interface SidebarProps {
   collapsed: boolean
@@ -92,60 +23,142 @@ export function Sidebar({ collapsed, onToggle, branding, onNavClick }: SidebarPr
     item => !item.roles || !role || item.roles.includes(role)
   )
 
+  const grouped = GROUP_ORDER.reduce<Record<string, typeof navItems>>((acc, key) => {
+    const items = visibleItems.filter(i => (i.group ?? 'main') === key)
+    if (items.length) acc[key] = items
+    return acc
+  }, {})
+
+  const orgLetter = (branding?.name ?? 'P')[0].toUpperCase()
+
   return (
     <aside
       className={cn(
-        'relative flex flex-col bg-gray-900 text-white transition-all duration-300 ease-in-out h-screen sticky top-0',
-        collapsed ? 'w-16' : 'w-64'
+        'relative flex flex-col h-screen sticky top-0 transition-all duration-300 ease-in-out overflow-hidden flex-shrink-0',
+        collapsed ? 'w-[60px]' : 'w-[220px]'
       )}
+      style={{
+        background: 'var(--surface)',
+        borderRight: '1px solid var(--border)',
+      }}
     >
-      {/* Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-gray-700">
-        {branding?.logoUrl ? (
-          <img src={branding.logoUrl} alt={branding.name ?? 'Logo'} className={collapsed ? 'h-7 mx-auto' : 'h-8'} />
-        ) : !collapsed ? (
-          <span className="text-lg font-bold tracking-tight">
-            <span style={{ color: 'var(--org-primary, #60a5fa)' }}>{branding?.name ?? 'PMS'}</span>
-          </span>
+      {/* ── Logo ──────────────────────────────────────────────────────── */}
+      <div
+        className="flex items-center h-14 px-3 flex-shrink-0"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
+        {collapsed ? (
+          <div
+            className="mx-auto w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: 'var(--accent-amber-muted)' }}
+          >
+            <span className="text-sm font-bold font-display" style={{ color: 'var(--accent-amber)' }}>
+              {orgLetter}
+            </span>
+          </div>
+        ) : branding?.logoUrl ? (
+          <img src={branding.logoUrl} alt={branding.name ?? 'Logo'} className="h-7 object-contain" />
         ) : (
-          <span className="text-lg font-bold mx-auto" style={{ color: 'var(--org-primary, #60a5fa)' }}>{(branding?.name ?? 'P')[0]}</span>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: 'var(--accent-amber-muted)' }}
+            >
+              <span className="text-xs font-bold" style={{ color: 'var(--accent-amber)' }}>
+                {orgLetter}
+              </span>
+            </div>
+            <span
+              className="text-[13px] font-semibold font-display truncate"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {branding?.name ?? 'PropManager'}
+            </span>
+          </div>
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-2">
-        {visibleItems.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+      {/* ── Navigation ────────────────────────────────────────────────── */}
+      <nav className="flex-1 overflow-y-auto py-2">
+        {GROUP_ORDER.map(groupKey => {
+          const items = grouped[groupKey]
+          if (!items) return null
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavClick}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 transition-colors text-sm font-medium',
-                isActive
-                  ? 'text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            <div key={groupKey} className="mb-0.5">
+              {!collapsed && (
+                <p
+                  className="px-4 pt-4 pb-1 text-[9px] font-bold uppercase tracking-[0.12em]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {GROUP_LABELS[groupKey]}
+                </p>
               )}
-              style={isActive ? { backgroundColor: 'var(--org-primary, #2563eb)' } : undefined}
-            >
-              <item.icon className="h-5 w-5 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
-            </Link>
+              {collapsed && groupKey !== 'main' && (
+                <div
+                  className="mx-3 my-2 h-px"
+                  style={{ background: 'var(--border)' }}
+                />
+              )}
+              {items.map(item => {
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== '/dashboard' && pathname.startsWith(item.href + '/'))
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onNavClick}
+                    title={collapsed ? item.label : undefined}
+                    className={cn(
+                      'relative flex items-center gap-2.5 mx-2 px-2.5 py-2 rounded-lg transition-all duration-150 text-[12px] font-medium leading-none',
+                      isActive ? 'nav-active' : ''
+                    )}
+                    style={{
+                      color: isActive ? 'var(--accent-amber)' : 'var(--text-secondary)',
+                      background: isActive ? 'var(--accent-amber-muted)' : 'transparent',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)'
+                        ;(e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isActive) {
+                        ;(e.currentTarget as HTMLElement).style.background = 'transparent'
+                        ;(e.currentTarget as HTMLElement).style.color = 'var(--text-secondary)'
+                      }
+                    }}
+                  >
+                    <item.icon className="h-[15px] w-[15px] flex-shrink-0" />
+                    {!collapsed && <span className="truncate">{item.label}</span>}
+                  </Link>
+                )
+              })}
+            </div>
           )
         })}
       </nav>
 
-      {/* Collapse toggle — hidden on mobile */}
+      {/* ── Collapse toggle ───────────────────────────────────────────── */}
       <button
         onClick={onToggle}
-        className="hidden md:block absolute -right-3 top-20 bg-gray-900 border border-gray-700 rounded-full p-1 text-gray-400 hover:text-white transition-colors"
+        className="hidden md:flex absolute -right-3 top-[68px] h-6 w-6 items-center justify-center rounded-full transition-all duration-150 z-10"
+        style={{
+          background: 'var(--surface-raised)',
+          border: '1px solid var(--border-strong)',
+          color: 'var(--text-muted)',
+        }}
+        onMouseEnter={e => {
+          ;(e.currentTarget as HTMLElement).style.color = 'var(--accent-amber)'
+          ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent-amber)'
+        }}
+        onMouseLeave={e => {
+          ;(e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'
+          ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border-strong)'
+        }}
       >
-        {collapsed ? (
-          <ChevronRight className="h-4 w-4" />
-        ) : (
-          <ChevronLeft className="h-4 w-4" />
-        )}
+        {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
       </button>
     </aside>
   )

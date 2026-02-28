@@ -1,33 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Sora:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-rgb: 248, 250, 252;
-  --org-primary: #2563eb;
-  --org-accent: #7c3aed;
+  /* ── Dark Obsidian Theme ────────────────────────────────────────────── */
+  --bg:            #08090F;
+  --surface:       #0F1119;
+  --surface-raised: #161A28;
+  --surface-hover: #1C2035;
+  --border:        rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.11);
+
+  --text-primary:   #E8ECF5;
+  --text-secondary: #8B96BE;
+  --text-muted:     #4E5877;
+
+  /* Accent: warm amber/gold */
+  --accent-amber:        #F59E0B;
+  --accent-amber-glow:   rgba(245, 158, 11, 0.18);
+  --accent-amber-muted:  rgba(245, 158, 11, 0.09);
+
+  /* Data accents */
+  --accent-blue:        #4F8EF7;
+  --accent-blue-muted:  rgba(79, 142, 247, 0.10);
+  --accent-green:       #10E3A5;
+  --accent-green-muted: rgba(16, 227, 165, 0.10);
+  --accent-red:         #FF4D6A;
+  --accent-red-muted:   rgba(255, 77, 106, 0.10);
+  --accent-yellow:      #FFB534;
+  --accent-yellow-muted: rgba(255, 181, 52, 0.10);
+
+  /* Org branding (overridden at runtime) */
+  --org-primary: #4F8EF7;
+  --org-accent:  #8B5CF6;
+
+  /* Legacy body color vars */
+  --foreground-rgb: 232, 236, 245;
+  --background-rgb: 8, 9, 15;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* ── Typography helpers ─────────────────────────────────────────────────── */
+.font-display {
+  font-family: 'Sora', 'Plus Jakarta Sans', sans-serif;
+}
+
+.font-data {
+  font-family: 'DM Mono', 'Fira Code', 'Courier New', monospace;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--border-strong); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* ── Glass card ─────────────────────────────────────────────────────── */
+  .glass {
+    background: rgba(255, 255, 255, 0.025);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  /* ── Active nav indicator (amber left border) ───────────────────────── */
+  .nav-active {
+    position: relative;
+  }
+  .nav-active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 2.5px;
+    background: var(--accent-amber);
+    border-radius: 0 2px 2px 0;
+    box-shadow: 0 0 8px var(--accent-amber-glow);
+  }
+
+  /* ── Gradient text ──────────────────────────────────────────────────── */
+  .gradient-text-amber {
+    background: linear-gradient(135deg, #F59E0B 0%, #FBBF24 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 }
 
-/* Touch-friendly targets for coarse pointers (mobile) */
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.25s ease-out forwards;
+}
+
+@keyframes pulse-ring {
+  0%   { transform: scale(1); opacity: 1; }
+  50%  { transform: scale(1.15); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.pulse-ring {
+  animation: pulse-ring 2.2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface) 0%,
+    var(--surface-raised) 50%,
+    var(--surface) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+}
+
+/* ── Recharts overrides (dark theme) ────────────────────────────────────── */
+.recharts-text {
+  fill: var(--text-muted) !important;
+  font-family: 'DM Mono', monospace !important;
+  font-size: 10px !important;
+}
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: var(--border) !important;
+}
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: var(--border) !important;
+}
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 8px !important;
+  color: var(--text-primary) !important;
+  font-family: 'DM Mono', monospace !important;
+  font-size: 11px !important;
+}
+
+/* ── Touch-friendly targets (mobile) ────────────────────────────────────── */
 @media (pointer: coarse) {
   button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] {
     min-height: 44px;
     min-width: 44px;
   }
-
-  /* Keep inline badges/small elements compact */
   .badge, [data-compact] {
     min-height: auto;
     min-width: auto;
