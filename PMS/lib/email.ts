@@ -173,6 +173,19 @@ export function distributionNoticeEmail(
   `
 }
 
+export function autoPayFailedEmail(tenantName: string, amount: number, propertyName: string) {
+  return `
+    <div style="font-family:sans-serif;max-width:600px">
+      <h2 style="color:#dc2626">Auto-Pay Payment Failed</h2>
+      <p>Hi ${tenantName},</p>
+      <p>Your automatic rent payment of <strong>$${amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong> for <strong>${propertyName}</strong> could not be processed.</p>
+      <p>Please log in to update your payment method or make a manual payment to avoid late fees.</p>
+      <hr style="border-color:#e5e7eb"/>
+      <p style="color:#6b7280;font-size:12px">Property Management System</p>
+    </div>
+  `
+}
+
 // ── SMS text helpers ─────────────────────────────────────────────────────────
 
 export function woStatusSms(woTitle: string, newStatus: string, propertyName: string) {
@@ -214,4 +227,8 @@ export function onboardingReminderSms(tenantName: string, propertyName: string, 
 
 export function distributionNoticeSms(ownerName: string, propertyName: string, period: string, netAmount: number) {
   return `PMS: Hi ${ownerName}, your ${period} distribution for ${propertyName}: $${netAmount.toFixed(2)} net. Log in to view details.`
+}
+
+export function autoPayFailedSms(tenantName: string, amount: number, propertyName: string) {
+  return `PMS: Hi ${tenantName}, your auto-pay of $${amount.toFixed(2)} at ${propertyName} failed. Log in to update payment method.`
 }

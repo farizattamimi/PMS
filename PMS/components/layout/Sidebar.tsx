@@ -29,6 +29,8 @@ import {
   HardHat,
   Bell,
   Banknote,
+  ScrollText,
+  Shield,
 } from 'lucide-react'
 
 interface NavItem {
@@ -58,6 +60,8 @@ const navItems: NavItem[] = [
   { href: '/dashboard/agent-settings',   label: 'Agent Settings',   icon: Settings2,    roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/notification-preferences', label: 'Preferences', icon: Bell },
   { href: '/dashboard/distributions', label: 'Distributions', icon: Banknote, roles: ['ADMIN', 'MANAGER'] },
+  { href: '/dashboard/admin/audit-log', label: 'Audit Log', icon: ScrollText, roles: ['ADMIN', 'MANAGER'] },
+  { href: '/dashboard/settings/security', label: 'Security', icon: Shield },
   { href: '/dashboard/admin', label: 'Admin', icon: Settings, roles: ['ADMIN'] },
   // Owner-only
   { href: '/dashboard/owner-portal', label: 'My Properties', icon: Building2, roles: ['OWNER'] },
@@ -76,9 +80,10 @@ interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
   branding?: { name?: string; logoUrl?: string; primaryColor?: string }
+  onNavClick?: () => void
 }
 
-export function Sidebar({ collapsed, onToggle, branding }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, branding, onNavClick }: SidebarProps) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const role = session?.user?.systemRole
@@ -115,6 +120,7 @@ export function Sidebar({ collapsed, onToggle, branding }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavClick}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 transition-colors text-sm font-medium',
                 isActive
@@ -130,10 +136,10 @@ export function Sidebar({ collapsed, onToggle, branding }: SidebarProps) {
         })}
       </nav>
 
-      {/* Collapse toggle */}
+      {/* Collapse toggle — hidden on mobile */}
       <button
         onClick={onToggle}
-        className="absolute -right-3 top-20 bg-gray-900 border border-gray-700 rounded-full p-1 text-gray-400 hover:text-white transition-colors"
+        className="hidden md:block absolute -right-3 top-20 bg-gray-900 border border-gray-700 rounded-full p-1 text-gray-400 hover:text-white transition-colors"
       >
         {collapsed ? (
           <ChevronRight className="h-4 w-4" />

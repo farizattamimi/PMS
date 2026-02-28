@@ -1,12 +1,16 @@
 'use client'
 
 import { signOut, useSession } from 'next-auth/react'
-import { Bell, LogOut, User, X } from 'lucide-react'
+import { Bell, LogOut, Menu, User, X } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { useEffect, useRef, useState } from 'react'
 import { formatDate } from '@/lib/utils'
 
-export function Topbar() {
+interface TopbarProps {
+  onMenuClick?: () => void
+}
+
+export function Topbar({ onMenuClick }: TopbarProps) {
   const { data: session } = useSession()
   const [notifications, setNotifications] = useState<any[]>([])
   const [showPanel, setShowPanel] = useState(false)
@@ -54,9 +58,21 @@ export function Topbar() {
   }
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
-      <div className="flex-1" />
-      <div className="flex items-center gap-4">
+    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6">
+      <div className="flex items-center gap-2">
+        {/* Hamburger — mobile only */}
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            className="md:hidden p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+        <div className="flex-1" />
+      </div>
+      <div className="flex items-center gap-2 sm:gap-4">
         {/* Role badge */}
         {session?.user?.systemRole && (
           <Badge variant={
@@ -83,7 +99,7 @@ export function Topbar() {
           </button>
 
           {showPanel && (
-            <div className="absolute right-0 top-12 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+            <div className="absolute right-0 top-12 max-w-[calc(100vw-2rem)] sm:w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                 <span className="font-semibold text-sm text-gray-900">Notifications</span>
                 <div className="flex items-center gap-2">

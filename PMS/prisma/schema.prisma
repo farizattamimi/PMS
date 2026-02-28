@@ -322,6 +322,11 @@ model User {
 
   phone        String?
 
+  // Two-Factor Authentication
+  twoFactorSecret      String?
+  twoFactorEnabled     Boolean   @default(false)
+  twoFactorBackupCodes String[]
+
   managedProperties Property[]  @relation("PropertyManager")
   tenant            Tenant?
   vendor            Vendor?
@@ -446,6 +451,8 @@ model Tenant {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
+  stripeCustomerId String?  @unique
+
   leases       Lease[]
   threads      MessageThread[]
   application  TenantApplication?
@@ -467,6 +474,8 @@ model Lease {
   signedAt         DateTime?
   tenantSignature  String?
   managerSignature String?
+  stripeSubscriptionId     String?  @unique
+  stripeSubscriptionStatus String?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -489,6 +498,7 @@ model LedgerEntry {
   stripeSessionId       String?   @unique
   stripePaymentIntentId String?   @unique
   stripeReceiptUrl      String?
+  stripeInvoiceId       String?   @unique
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }

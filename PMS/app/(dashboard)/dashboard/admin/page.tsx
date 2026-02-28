@@ -152,6 +152,7 @@ export default function AdminPage() {
             </Button>
           </div>
           <Card padding="none">
+            <div className="overflow-x-auto">
             <Table>
               <TableHead>
                 <TableRow>
@@ -194,6 +195,7 @@ export default function AdminPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </Card>
         </>
       )}
@@ -209,6 +211,7 @@ export default function AdminPage() {
             <input className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1 max-w-xs" placeholder="Entity ID…" value={auditFilter.entityId} onChange={e => setAuditFilter({ ...auditFilter, entityId: e.target.value })} />
           </div>
           <Card padding="none">
+            <div className="overflow-x-auto">
             <Table>
               <TableHead>
                 <TableRow>
@@ -236,6 +239,7 @@ export default function AdminPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </Card>
         </>
       )}

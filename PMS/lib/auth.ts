@@ -3,6 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { prisma } from './prisma'
 import { SystemRole } from '@prisma/client'
+import { verifyToken, verifyBackupCode } from './totp'
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -17,6 +18,7 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
+        totpCode: { label: 'TOTP Code', type: 'text' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -42,6 +44,31 @@ export const authOptions: NextAuthOptions = {
 
         if (!isPasswordValid) {
           throw new Error('Invalid password')
+        }
+
+        // ── Two-Factor Authentication ─────────────────────────────────────
+        if (user.twoFactorEnabled && user.twoFactorSecret) {
+          const code = credentials.totpCode
+          if (!code) {
+            throw new Error('2FA_REQUIRED')
+          }
+
+          // Try TOTP first
+          const totpValid = verifyToken(code, user.twoFactorSecret)
+          if (!totpValid) {
+            // Try backup code
+            const backupIdx = verifyBackupCode(code, user.twoFactorBackupCodes)
+            if (backupIdx === -1) {
+              throw new Error('Invalid 2FA code')
+            }
+            // Consume the used backup code
+            const updatedCodes = [...user.twoFactorBackupCodes]
+            updatedCodes.splice(backupIdx, 1)
+            await prisma.user.update({
+              where: { id: user.id },
+              data: { twoFactorBackupCodes: updatedCodes },
+            })
+          }
         }
 
         return {

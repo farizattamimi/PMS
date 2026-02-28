@@ -25,7 +25,10 @@
     "test:iif": "node --loader tsx --test tests/iif.test.ts",
     "test:new-features": "node --loader tsx --test tests/new-features/authz-and-security.test.ts",
     "test:security": "node --loader tsx --test tests/security/codebase-hardening.test.ts",
-    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts tests/agent/tenant-comms-autopilot.test.ts tests/agent/compliance-pm-autopilot.test.ts tests/agent/sla-breach-autopilot.test.ts tests/stripe/checkout.test.ts tests/screening/screening.test.ts tests/iif.test.ts tests/new-features/authz-and-security.test.ts tests/security/codebase-hardening.test.ts"
+    "test:audit": "node --loader tsx --test tests/audit-log.test.ts",
+    "test:2fa": "node --loader tsx --test tests/2fa.test.ts",
+    "test:subscription": "node --loader tsx --test tests/stripe/subscription.test.ts",
+    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts tests/agent/tenant-comms-autopilot.test.ts tests/agent/compliance-pm-autopilot.test.ts tests/agent/sla-breach-autopilot.test.ts tests/stripe/checkout.test.ts tests/screening/screening.test.ts tests/iif.test.ts tests/new-features/authz-and-security.test.ts tests/security/codebase-hardening.test.ts tests/audit-log.test.ts tests/2fa.test.ts tests/stripe/subscription.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -35,12 +38,15 @@
     "@prisma/client": "^5.22.0",
     "@react-email/render": "^2.0.4",
     "@react-pdf/renderer": "^4.3.2",
+    "@types/qrcode": "^1.5.6",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "lucide-react": "^0.575.0",
     "next": "^13.5.6",
     "next-auth": "^4.24.13",
+    "otplib": "^13.3.0",
     "prisma": "^5.22.0",
+    "qrcode": "^1.5.4",
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^3.7.0",

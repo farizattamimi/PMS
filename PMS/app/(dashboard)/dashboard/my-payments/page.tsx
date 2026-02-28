@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ChevronLeft, CreditCard, ExternalLink, Plus } from 'lucide-react'
+import { ChevronLeft, CreditCard, ExternalLink, Plus, RefreshCw, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell, TableEmptyState } from '@/components/ui/Table'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
@@ -19,6 +20,8 @@ export default function MyPaymentsPage() {
   const [paying, setPaying] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [subscribing, setSubscribing] = useState(false)
+  const [openingPortal, setOpeningPortal] = useState(false)
 
   async function load() {
     fetch('/api/portal').then(r => r.json()).then(setData).finally(() => setLoading(false))
@@ -29,14 +32,20 @@ export default function MyPaymentsPage() {
   // Handle Stripe redirect query params
   useEffect(() => {
     const paymentStatus = searchParams.get('payment')
+    const autopayStatus = searchParams.get('autopay')
     if (paymentStatus === 'success') {
       setSuccessMsg('Payment completed successfully! Your balance will update shortly.')
-      // Clean up the URL
       window.history.replaceState({}, '', '/dashboard/my-payments')
-      // Refresh data after a moment to pick up the webhook-created entry
       setTimeout(() => load(), 2000)
     } else if (paymentStatus === 'cancelled') {
       setErrorMsg('Payment was cancelled. No charge was made.')
+      window.history.replaceState({}, '', '/dashboard/my-payments')
+    } else if (autopayStatus === 'success') {
+      setSuccessMsg('Auto-Pay enabled! Your rent will be charged automatically each month.')
+      window.history.replaceState({}, '', '/dashboard/my-payments')
+      setTimeout(() => load(), 2000)
+    } else if (autopayStatus === 'cancelled') {
+      setErrorMsg('Auto-Pay setup was cancelled.')
       window.history.replaceState({}, '', '/dashboard/my-payments')
     }
   }, [searchParams])
@@ -65,7 +74,6 @@ export default function MyPaymentsPage() {
         return
       }
 
-      // Redirect to Stripe Checkout
       if (result.checkoutUrl) {
         window.location.href = result.checkoutUrl
         return
@@ -78,6 +86,48 @@ export default function MyPaymentsPage() {
     setPaying(false)
   }
 
+  async function enableAutoPay() {
+    setSubscribing(true)
+    setErrorMsg('')
+    try {
+      const res = await fetch('/api/stripe/subscribe', { method: 'POST' })
+      const result = await res.json()
+      if (!res.ok) {
+        setErrorMsg(result.error || 'Failed to set up auto-pay')
+        setSubscribing(false)
+        return
+      }
+      if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl
+        return
+      }
+    } catch {
+      setErrorMsg('Failed to connect to payment service')
+    }
+    setSubscribing(false)
+  }
+
+  async function openBillingPortal() {
+    setOpeningPortal(true)
+    setErrorMsg('')
+    try {
+      const res = await fetch('/api/stripe/portal', { method: 'POST' })
+      const result = await res.json()
+      if (!res.ok) {
+        setErrorMsg(result.error || 'Failed to open billing portal')
+        setOpeningPortal(false)
+        return
+      }
+      if (result.portalUrl) {
+        window.location.href = result.portalUrl
+        return
+      }
+    } catch {
+      setErrorMsg('Failed to connect to billing service')
+    }
+    setOpeningPortal(false)
+  }
+
   if (loading) return (
     <div className="flex justify-center py-20">
       <div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full" />
@@ -87,9 +137,11 @@ export default function MyPaymentsPage() {
   const { activeLease, balance } = data ?? {}
   const allLedger: any[] = activeLease?.ledgerEntries ?? []
 
-  // Separate charges (positive amounts = money owed) from payments (negative = paid)
   const charges = allLedger.filter((e: any) => e.amount > 0)
   const payments = allLedger.filter((e: any) => e.amount < 0)
+
+  const hasSubscription = !!activeLease?.stripeSubscriptionId
+  const subscriptionStatus = activeLease?.stripeSubscriptionStatus
 
   const INPUT_CLS = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
@@ -132,6 +184,51 @@ export default function MyPaymentsPage() {
         </Card>
       ) : (
         <>
+          {/* Auto-Pay Card */}
+          <Card className="mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${hasSubscription ? 'bg-green-100' : 'bg-gray-100'}`}>
+                  <Zap className={`h-5 w-5 ${hasSubscription ? 'text-green-600' : 'text-gray-400'}`} />
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">Auto-Pay</p>
+                  <p className="text-sm text-gray-500">
+                    {hasSubscription
+                      ? `Monthly rent of ${formatCurrency(activeLease.monthlyRent)} charged automatically`
+                      : 'Set up automatic monthly rent payments'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {hasSubscription && (
+                  <Badge variant={subscriptionStatus === 'active' ? 'success' : subscriptionStatus === 'past_due' ? 'danger' : 'warning'}>
+                    {subscriptionStatus ?? 'unknown'}
+                  </Badge>
+                )}
+                {hasSubscription ? (
+                  <button
+                    onClick={openBillingPortal}
+                    disabled={openingPortal}
+                    className="flex items-center gap-1 px-3 py-2 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
+                  >
+                    {openingPortal ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+                    Manage
+                  </button>
+                ) : (
+                  <button
+                    onClick={enableAutoPay}
+                    disabled={subscribing}
+                    className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >
+                    {subscribing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                    Enable Auto-Pay
+                  </button>
+                )}
+              </div>
+            </div>
+          </Card>
+
           {/* Balance summary */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <Card>
@@ -162,6 +259,7 @@ export default function MyPaymentsPage() {
             <div className="px-6 py-4 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900">Transaction History</h3>
             </div>
+            <div className="overflow-x-auto">
             <Table>
               <TableHead>
                 <TableRow>
@@ -209,6 +307,7 @@ export default function MyPaymentsPage() {
                 })()}
               </TableBody>
             </Table>
+            </div>
           </Card>
         </>
       )}

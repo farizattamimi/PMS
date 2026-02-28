@@ -35,6 +35,7 @@ export default withAuth(
         '/dashboard/my-maintenance',
         '/dashboard/my-onboarding',
         '/dashboard/notification-preferences',
+        '/dashboard/settings',
       ]
       const isAllowed = allowedPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
       if (!isAllowed && pathname.startsWith('/dashboard')) {
@@ -48,6 +49,7 @@ export default withAuth(
         '/dashboard',
         '/dashboard/owner-portal',
         '/dashboard/notification-preferences',
+        '/dashboard/settings',
       ]
       const isAllowed = allowedPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
       if (!isAllowed && pathname.startsWith('/dashboard')) {
@@ -61,6 +63,7 @@ export default withAuth(
         '/dashboard',
         '/dashboard/vendor-portal',
         '/dashboard/notification-preferences',
+        '/dashboard/settings',
       ]
       const isAllowed = allowedPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
       if (!isAllowed && pathname.startsWith('/dashboard')) {

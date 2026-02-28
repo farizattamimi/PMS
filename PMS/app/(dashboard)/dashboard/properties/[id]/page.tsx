@@ -7,7 +7,7 @@ import { ChevronLeft, Plus, X, Upload, FileText, Trash2, ExternalLink, Wand2, Pe
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
-import { UnitStatusBadge, LeaseStatusBadge, WorkOrderPriorityBadge, WorkOrderStatusBadge } from '@/components/ui/Badge'
+import { Badge, UnitStatusBadge, LeaseStatusBadge, WorkOrderPriorityBadge, WorkOrderStatusBadge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
 import { SignaturePad } from '@/components/ui/SignaturePad'
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell, TableEmptyState } from '@/components/ui/Table'
@@ -586,7 +586,7 @@ export default function PropertyDetailPage() {
         )}
         <Card padding="none">
           <Table>
-            <TableHead><TableRow><TableHeader><input type="checkbox" checked={leases.filter((l: any) => l.status === 'ACTIVE').length > 0 && leases.filter((l: any) => l.status === 'ACTIVE').every((l: any) => selectedLeaseIds.has(l.id))} onChange={toggleAllActiveLeases} className="rounded border-gray-300" /></TableHeader><TableHeader>Tenant</TableHeader><TableHeader>Unit</TableHeader><TableHeader>Start</TableHeader><TableHeader>End</TableHeader><TableHeader>Rent</TableHeader><TableHeader>Status</TableHeader><TableHeader>AI Risk</TableHeader><TableHeader></TableHeader></TableRow></TableHead>
+            <TableHead><TableRow><TableHeader><input type="checkbox" checked={leases.filter((l: any) => l.status === 'ACTIVE').length > 0 && leases.filter((l: any) => l.status === 'ACTIVE').every((l: any) => selectedLeaseIds.has(l.id))} onChange={toggleAllActiveLeases} className="rounded border-gray-300" /></TableHeader><TableHeader>Tenant</TableHeader><TableHeader>Unit</TableHeader><TableHeader>Start</TableHeader><TableHeader>End</TableHeader><TableHeader>Rent</TableHeader><TableHeader>Status</TableHeader><TableHeader>Auto-Pay</TableHeader><TableHeader>AI Risk</TableHeader><TableHeader></TableHeader></TableRow></TableHead>
             <TableBody>
               {leases.length === 0 && <TableEmptyState message="No leases yet" />}
               {leases.map(l => {
@@ -614,6 +614,15 @@ export default function PropertyDetailPage() {
                       </div>
                     </TableCell>
                     <TableCell><LeaseStatusBadge status={l.status} /></TableCell>
+                    <TableCell>
+                      {l.stripeSubscriptionId ? (
+                        <Badge variant={l.stripeSubscriptionStatus === 'active' ? 'success' : l.stripeSubscriptionStatus === 'past_due' ? 'danger' : 'warning'}>
+                          {l.stripeSubscriptionStatus ?? 'active'}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {l.status === 'ACTIVE' ? (
                         risk === 'loading'

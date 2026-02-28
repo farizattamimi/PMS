@@ -259,6 +259,7 @@ export default function WorkOrdersPage() {
         </div>
       ) : (
         <Card padding="none">
+          <div className="overflow-x-auto">
           <Table>
             <TableHead>
               <TableRow>
@@ -315,6 +316,7 @@ export default function WorkOrdersPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </Card>
       )}
 
