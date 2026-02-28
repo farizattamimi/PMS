@@ -6,6 +6,9 @@ import { writeAudit } from '@/lib/audit'
 
 type BulkAction = 'UPDATE_STATUS' | 'UPDATE_PRIORITY' | 'ASSIGN_VENDOR' | 'CANCEL'
 
+const VALID_STATUSES = ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'CANCELED']
+const VALID_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY']
+
 /**
  * POST /api/workorders/bulk-action
  *
@@ -49,10 +52,16 @@ export async function POST(req: Request) {
 
   switch (action) {
     case 'UPDATE_STATUS':
+      if (!VALID_STATUSES.includes(value!)) {
+        return NextResponse.json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 })
+      }
       updateData.status = value
       if (value === 'COMPLETED') updateData.completedAt = new Date()
       break
     case 'UPDATE_PRIORITY':
+      if (!VALID_PRIORITIES.includes(value!)) {
+        return NextResponse.json({ error: `Invalid priority. Must be one of: ${VALID_PRIORITIES.join(', ')}` }, { status: 400 })
+      }
       updateData.priority = value
       break
     case 'ASSIGN_VENDOR':

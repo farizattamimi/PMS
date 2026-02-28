@@ -34,7 +34,7 @@ export async function GET(req: Request) {
   const where: any = { property: propertyFilter }
   if (propertyId) where.propertyId = propertyId
   if (status) where.status = status
-  if (search) {
+  if (search && search.length <= 100) {
     where.OR = [
       { email: { contains: search, mode: 'insensitive' } },
       { firstName: { contains: search, mode: 'insensitive' } },

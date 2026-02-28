@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { generateIIF, type IIFRow } from '@/lib/iif'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
@@ -29,15 +30,16 @@ export async function GET(req: Request) {
   const start = new Date(`${startDate}T00:00:00Z`)
   const end = new Date(`${endDate}T23:59:59.999Z`)
 
-  // Scope: MANAGER sees only managed properties, ADMIN sees all
+  // Scope: MANAGER sees only managed properties, ADMIN sees own org
+  const orgScope = orgScopeWhere(session)
   const propFilter =
     session.user.systemRole === 'MANAGER'
       ? propertyId
         ? { id: propertyId, managerId: session.user.id }
         : { managerId: session.user.id }
       : propertyId
-        ? { id: propertyId }
-        : {}
+        ? { id: propertyId, ...orgScope }
+        : { ...orgScope }
 
   const properties = await prisma.property.findMany({
     where: propFilter,

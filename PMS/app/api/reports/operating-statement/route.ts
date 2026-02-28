@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
@@ -23,14 +24,15 @@ export async function GET(req: Request) {
   endParsed.setMonth(endParsed.getMonth() + 1)
 
   // Scope: single property or portfolio
+  const orgScope = orgScopeWhere(session)
   const propFilter =
     session.user.systemRole === 'MANAGER'
       ? propertyId
         ? { id: propertyId, managerId: session.user.id }
         : { managerId: session.user.id }
       : propertyId
-        ? { id: propertyId }
-        : {}
+        ? { id: propertyId, ...orgScope }
+        : { ...orgScope }
 
   const properties = await prisma.property.findMany({
     where: propFilter,

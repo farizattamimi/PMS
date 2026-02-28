@@ -17,6 +17,9 @@ export async function GET(req: Request) {
   if (!propertyId || !period) {
     return NextResponse.json({ error: 'propertyId and period are required' }, { status: 400 })
   }
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    return NextResponse.json({ error: 'period must be in YYYY-MM format' }, { status: 400 })
+  }
 
   if (!(await assertManagerOwnsProperty(session, propertyId))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -41,6 +44,9 @@ export async function POST(req: Request) {
 
   if (!propertyId || !period || !category || budgetedAmount == null) {
     return NextResponse.json({ error: 'propertyId, period, category, and budgetedAmount are required' }, { status: 400 })
+  }
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    return NextResponse.json({ error: 'period must be in YYYY-MM format' }, { status: 400 })
   }
 
   if (!(await assertManagerOwnsProperty(session, propertyId))) {

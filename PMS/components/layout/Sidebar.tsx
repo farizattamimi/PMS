@@ -41,7 +41,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['ADMIN', 'MANAGER', 'TENANT', 'VENDOR', 'OWNER'] },
   { href: '/dashboard/properties', label: 'Properties', icon: Building2, roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/workorders', label: 'Work Orders', icon: Wrench, roles: ['ADMIN', 'MANAGER', 'TENANT'] },
   { href: '/dashboard/vendors', label: 'Vendors', icon: Users2, roles: ['ADMIN', 'MANAGER'] },

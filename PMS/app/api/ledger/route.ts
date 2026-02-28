@@ -36,7 +36,15 @@ export async function GET(req: Request) {
     }
   } else if (session.user.systemRole === 'MANAGER') {
     const managed = await prisma.property.findMany({ where: { managerId: session.user.id }, select: { id: true } })
-    if (!propertyId) where.propertyId = { in: managed.map(p => p.id) }
+    const managedIds = managed.map(p => p.id)
+    if (propertyId) {
+      // Verify the requested property belongs to this manager
+      if (!managedIds.includes(propertyId)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    } else {
+      where.propertyId = { in: managedIds }
+    }
   }
 
   const entries = await prisma.ledgerEntry.findMany({

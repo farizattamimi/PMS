@@ -34,6 +34,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: 'approvedRent and approvedMoveIn required' }, { status: 400 })
   }
 
+  const rentNum = Number(approvedRent)
+  if (!Number.isFinite(rentNum) || rentNum <= 0 || rentNum > 999999) {
+    return NextResponse.json({ error: 'approvedRent must be a positive number up to 999999' }, { status: 400 })
+  }
+
+  const moveInDate = new Date(approvedMoveIn)
+  if (isNaN(moveInDate.getTime())) {
+    return NextResponse.json({ error: 'approvedMoveIn must be a valid date' }, { status: 400 })
+  }
+
   // Screening gate — require screening unless overridden
   if (!screeningOverride) {
     const latestReport = await prisma.screeningReport.findFirst({
@@ -85,8 +95,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     data: {
       status: 'APPROVED',
       tenantId: tenant.id,
-      approvedRent: Number(approvedRent),
-      approvedMoveIn: new Date(approvedMoveIn),
+      approvedRent: rentNum,
+      approvedMoveIn: moveInDate,
       reviewedBy: session.user.id,
       reviewedAt: new Date(),
       unitId: effectiveUnitId || null,
@@ -108,7 +118,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         propertyId: application.propertyId,
         startDate: moveIn,
         endDate,
-        monthlyRent: Number(approvedRent),
+        monthlyRent: rentNum,
         depositAmount: 0,
         status: 'DRAFT',
       },

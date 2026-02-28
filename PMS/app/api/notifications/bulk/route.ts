@@ -80,12 +80,25 @@ export async function POST(req: Request) {
 
     targetUserIds = Array.from(new Set(leases.map(l => l.tenant.userId)))
   } else if (tenantUserIds && tenantUserIds.length > 0) {
-    // Verify all IDs are actual users
-    const users = await prisma.user.findMany({
-      where: { id: { in: tenantUserIds } },
-      select: { id: true },
-    })
-    targetUserIds = users.map(u => u.id)
+    // MANAGER: only allow targeting tenants who have active leases on manager's properties
+    if (session.user.systemRole === 'MANAGER') {
+      const managedLeases = await prisma.lease.findMany({
+        where: {
+          status: { in: ['ACTIVE', 'DRAFT'] },
+          unit: { property: { managerId: session.user.id } },
+          tenant: { userId: { in: tenantUserIds } },
+        },
+        select: { tenant: { select: { userId: true } } },
+      })
+      targetUserIds = Array.from(new Set(managedLeases.map(l => l.tenant.userId)))
+    } else {
+      // ADMIN: verify IDs are actual users
+      const users = await prisma.user.findMany({
+        where: { id: { in: tenantUserIds } },
+        select: { id: true },
+      })
+      targetUserIds = users.map(u => u.id)
+    }
   }
 
   if (targetUserIds.length === 0) {

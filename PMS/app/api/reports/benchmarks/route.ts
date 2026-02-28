@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
@@ -11,7 +12,7 @@ export async function GET(req: Request) {
 
   const propertyFilter = session.user.systemRole === 'MANAGER'
     ? { managerId: session.user.id }
-    : {}
+    : { ...orgScopeWhere(session) }
 
   const now = new Date()
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)

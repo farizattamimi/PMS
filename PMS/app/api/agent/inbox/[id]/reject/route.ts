@@ -7,7 +7,7 @@ const CLAIM_STALE_MS = 2 * 60 * 1000
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole !== 'MANAGER') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const rate = await checkRateLimit({
@@ -25,7 +25,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const action = await prisma.agentAction.findUnique({ where: { id: params.id } })
   if (!action) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (action.managerId !== session.user.id) {
+  if (session.user.systemRole === 'MANAGER' && action.managerId !== session.user.id) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (action.status !== 'PENDING_APPROVAL') {

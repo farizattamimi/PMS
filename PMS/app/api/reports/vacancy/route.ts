@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
@@ -12,11 +13,12 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const propertyId = searchParams.get('propertyId')
 
+  const orgScope = orgScopeWhere(session)
   const propertyFilter = propertyId
-    ? { id: propertyId }
+    ? { id: propertyId, ...orgScope }
     : session.user.systemRole === 'MANAGER'
       ? { managerId: session.user.id }
-      : {}
+      : { ...orgScope }
 
   // Get vacant units with their most recent ended lease (to determine vacancy start)
   const vacantUnits = await prisma.unit.findMany({

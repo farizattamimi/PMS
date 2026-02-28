@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
@@ -13,9 +14,10 @@ export async function GET(req: Request) {
   const propertyId = searchParams.get('propertyId')
   const statusFilter = searchParams.get('status') // AVAILABLE | OCCUPIED | DOWN | MODEL
 
+  const orgScope = orgScopeWhere(session)
   const propWhere = session.user.systemRole === 'MANAGER'
     ? { managerId: session.user.id, ...(propertyId ? { id: propertyId } : {}) }
-    : propertyId ? { id: propertyId } : {}
+    : propertyId ? { id: propertyId, ...orgScope } : { ...orgScope }
 
   const units = await prisma.unit.findMany({
     where: {

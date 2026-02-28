@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -15,7 +16,7 @@ export async function GET() {
 
   const propertyFilter = session.user.systemRole === 'MANAGER'
     ? { managerId: session.user.id }
-    : {}
+    : { ...orgScopeWhere(session) }
 
   const [
     totalUnits,

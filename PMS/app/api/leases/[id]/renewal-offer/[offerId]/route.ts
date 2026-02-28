@@ -3,6 +3,7 @@ import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { deliverNotification } from '@/lib/deliver'
 import { writeAudit } from '@/lib/audit'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function PATCH(req: Request, { params }: { params: { id: string; offerId: string } }) {
   const session = await sessionProvider.getSession()
@@ -31,6 +32,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string; of
     const tenantUserId = offer.lease.tenant.user.id
     if (session.user.id !== tenantUserId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    }
+  } else if (!['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  } else if (session.user.systemRole === 'MANAGER') {
+    const propertyId = offer.lease.unit?.property?.id
+    if (propertyId && !(await assertManagerOwnsProperty(session, propertyId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
   }
 

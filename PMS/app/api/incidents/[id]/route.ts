@@ -20,14 +20,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const body = await req.json()
   const updateData: any = {}
 
+  const VALID_STATUSES = ['OPEN', 'IN_REVIEW', 'RESOLVED', 'CLOSED']
+  const VALID_SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+
   if (body.status !== undefined) {
+    if (!VALID_STATUSES.includes(body.status)) {
+      return NextResponse.json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` }, { status: 400 })
+    }
     updateData.status = body.status
     if (body.status === 'RESOLVED' || body.status === 'CLOSED') {
       updateData.resolvedAt = new Date()
     }
   }
   if (body.resolution !== undefined) updateData.resolution = body.resolution
-  if (body.severity !== undefined) updateData.severity = body.severity
+  if (body.severity !== undefined) {
+    if (!VALID_SEVERITIES.includes(body.severity)) {
+      return NextResponse.json({ error: `Invalid severity. Must be one of: ${VALID_SEVERITIES.join(', ')}` }, { status: 400 })
+    }
+    updateData.severity = body.severity
+  }
 
   const updated = await prisma.incident.update({
     where: { id: params.id },

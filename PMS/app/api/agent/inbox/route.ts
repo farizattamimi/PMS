@@ -6,7 +6,7 @@ import { checkRateLimit, rateLimitHeaders, resolveRateLimitKey } from '@/lib/rat
 
 export async function GET(req: Request) {
   const session = await sessionProvider.getSession()
-  if (!session || session.user.systemRole !== 'MANAGER') {
+  if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const rate = await checkRateLimit({
@@ -32,9 +32,13 @@ export async function GET(req: Request) {
       ? (statusParam as AgentActionStatus)
       : undefined
 
+  const managerScope = session.user.systemRole === 'MANAGER'
+    ? { managerId: session.user.id }
+    : {}
+
   const actions = await prisma.agentAction.findMany({
     where: {
-      managerId: session.user.id,
+      ...managerScope,
       ...(status && { status }),
       ...(propertyId && { propertyId }),
     },
