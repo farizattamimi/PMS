@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createNotification } from '@/lib/notify'
+import { deliverNotification } from '@/lib/deliver'
 import { writeAudit } from '@/lib/audit'
 
 /**
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
   // Send notifications
   await Promise.all(
     targetUserIds.map(userId =>
-      createNotification({
+      deliverNotification({
         userId,
         title,
         body:       msgBody,

@@ -1,17 +1,21 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const incident = await prisma.incident.findUnique({ where: { id: params.id } })
   if (!incident) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (!(await assertManagerOwnsProperty(session, incident.propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const body = await req.json()
   const updateData: any = {}

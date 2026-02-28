@@ -3,7 +3,7 @@
 // Trigger: NEW_MESSAGE_THREAD or NEW_MESSAGE from a tenant
 
 import { prisma } from '../prisma'
-import { createNotification } from '../notify'
+import { deliverNotification } from '../deliver'
 import { evaluateAction } from '../policy-engine'
 import { anthropic, AI_MODEL } from '../ai'
 import {
@@ -329,7 +329,7 @@ async function handleBlock(opts: {
   })
 
   // Notify manager
-  await createNotification({
+  await deliverNotification({
     userId: opts.managerId,
     title: isHarassment
       ? 'URGENT: Tenant message flagged for harassment'
@@ -408,7 +408,7 @@ Intent detected: ${opts.intent}. Keep it under 150 words. Do not make specific c
     },
   })
 
-  await createNotification({
+  await deliverNotification({
     userId: opts.managerId,
     title: `Draft reply awaiting your review — ${opts.subject}`,
     body: `Intent: ${opts.intent}. Draft: ${draft.slice(0, 120)}…`,
@@ -544,7 +544,7 @@ Keep the reply under 150 words. Be helpful and professional.`,
   })
 
   // Notify tenant
-  await createNotification({
+  await deliverNotification({
     userId: opts.tenantUserId,
     title: 'New message from your property management team',
     body: replyBody.slice(0, 100),
@@ -554,7 +554,7 @@ Keep the reply under 150 words. Be helpful and professional.`,
   })
 
   // Notify manager with summary
-  await createNotification({
+  await deliverNotification({
     userId: opts.managerId,
     title: `Agent: Auto-reply sent — ${opts.subject}`,
     body: `Intent: ${opts.intent}. Reply sent to tenant.${newWorkOrderId ? ' Work order created.' : ''}`,

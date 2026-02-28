@@ -11,7 +11,7 @@ import { prisma } from '@/lib/prisma'
 
 function makeSession(role: 'ADMIN' | 'MANAGER' | 'TENANT', id: string): Session {
   return {
-    user: { id, systemRole: role, name: null, email: null, image: null },
+    user: { id, systemRole: role, name: null, email: null, image: null, orgId: null },
     expires: '2099-01-01T00:00:00.000Z',
   }
 }

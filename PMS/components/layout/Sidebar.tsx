@@ -27,6 +27,8 @@ import {
   CalendarDays,
   BellRing,
   HardHat,
+  Bell,
+  Banknote,
 } from 'lucide-react'
 
 interface NavItem {
@@ -54,21 +56,29 @@ const navItems: NavItem[] = [
   { href: '/dashboard/agent-exceptions', label: 'Exceptions',       icon: AlertOctagon, roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-kpis',       label: 'KPI Dashboard',    icon: Gauge,        roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/agent-settings',   label: 'Agent Settings',   icon: Settings2,    roles: ['ADMIN', 'MANAGER'] },
+  { href: '/dashboard/notification-preferences', label: 'Preferences', icon: Bell },
+  { href: '/dashboard/distributions', label: 'Distributions', icon: Banknote, roles: ['ADMIN', 'MANAGER'] },
   { href: '/dashboard/admin', label: 'Admin', icon: Settings, roles: ['ADMIN'] },
+  // Owner-only
+  { href: '/dashboard/owner-portal', label: 'My Properties', icon: Building2, roles: ['OWNER'] },
+  { href: '/dashboard/owner-portal/distributions', label: 'Distributions', icon: Banknote, roles: ['OWNER'] },
   // Vendor-only
   { href: '/dashboard/vendor-portal',              label: 'My Work Orders', icon: HardHat,  roles: ['VENDOR'] },
   { href: '/dashboard/vendor-portal/profile',      label: 'My Profile',     icon: Settings2, roles: ['VENDOR'] },
   // Tenant-only
   { href: '/dashboard/my-lease', label: 'My Lease', icon: FileText, roles: ['TENANT'] },
   { href: '/dashboard/my-payments', label: 'My Payments', icon: CreditCard, roles: ['TENANT'] },
+  { href: '/dashboard/my-maintenance', label: 'My Maintenance', icon: Wrench, roles: ['TENANT'] },
+  { href: '/dashboard/my-onboarding', label: 'My Onboarding', icon: ClipboardCheck, roles: ['TENANT'] },
 ]
 
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  branding?: { name?: string; logoUrl?: string; primaryColor?: string }
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, branding }: SidebarProps) {
   const pathname = usePathname()
   const { data: session } = useSession()
   const role = session?.user?.systemRole
@@ -86,13 +96,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex items-center h-16 px-4 border-b border-gray-700">
-        {!collapsed && (
+        {branding?.logoUrl ? (
+          <img src={branding.logoUrl} alt={branding.name ?? 'Logo'} className={collapsed ? 'h-7 mx-auto' : 'h-8'} />
+        ) : !collapsed ? (
           <span className="text-lg font-bold tracking-tight">
-            <span className="text-blue-400">PMS</span>
+            <span style={{ color: 'var(--org-primary, #60a5fa)' }}>{branding?.name ?? 'PMS'}</span>
           </span>
-        )}
-        {collapsed && (
-          <span className="text-lg font-bold text-blue-400 mx-auto">P</span>
+        ) : (
+          <span className="text-lg font-bold mx-auto" style={{ color: 'var(--org-primary, #60a5fa)' }}>{(branding?.name ?? 'P')[0]}</span>
         )}
       </div>
 
@@ -107,9 +118,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg mb-1 transition-colors text-sm font-medium',
                 isActive
-                  ? 'bg-blue-600 text-white'
+                  ? 'text-white'
                   : 'text-gray-300 hover:bg-gray-800 hover:text-white'
               )}
+              style={isActive ? { backgroundColor: 'var(--org-primary, #2563eb)' } : undefined}
             >
               <item.icon className="h-5 w-5 flex-shrink-0" />
               {!collapsed && <span>{item.label}</span>}

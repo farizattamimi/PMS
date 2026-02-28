@@ -3,38 +3,44 @@ import assert from 'node:assert/strict'
 import type { Session } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { sessionProvider } from '@/lib/session-provider'
-import { GET as documentsGET } from '@/app/api/documents/route'
+import { GET as documentsGET, POST as documentsPOST } from '@/app/api/documents/route'
+import { documentQueries } from '@/lib/documents-data'
 import { DELETE as documentDELETE } from '@/app/api/documents/[id]/route'
 import { GET as workOrderGET, PATCH as workOrderPATCH } from '@/app/api/workorders/[id]/route'
 import { GET as messageThreadGET, PATCH as messageThreadPATCH } from '@/app/api/messages/threads/[id]/route'
 
 function makeSession(role: 'ADMIN' | 'MANAGER' | 'TENANT', id: string): Session {
   return {
-    user: { id, systemRole: role, name: null, email: null, image: null },
+    user: { id, systemRole: role, name: null, email: null, image: null, orgId: null },
     expires: '2099-01-01T00:00:00.000Z',
   }
 }
 
-test('GET /api/documents enforces tenant deny and manager property scoping', async () => {
+test('GET /api/documents enforces tenant and manager property scoping', async () => {
   const originalGetSession = sessionProvider.getSession
-  const originalFindMany = (prisma.document as any).findMany
-  let capturedWhere: any = null
+  const originalFindMany = documentQueries.findMany
+  const capturedWhere: any[] = []
 
   try {
-    sessionProvider.getSession = async () => makeSession('TENANT', 'tenant-user')
-    const tenantRes = await documentsGET(new Request('http://localhost/api/documents?propertyId=prop-1'))
-    assert.equal(tenantRes.status, 401)
-
-    sessionProvider.getSession = async () => makeSession('MANAGER', 'mgr-1')
-    ;(prisma.document as any).findMany = async (args: any) => {
-      capturedWhere = args.where
+    documentQueries.findMany = async (args: any) => {
+      capturedWhere.push(args.where)
       return []
     }
+
+    sessionProvider.getSession = async () => makeSession('TENANT', 'tenant-user')
+    const tenantRes = await documentsGET(new Request('http://localhost/api/documents?propertyId=prop-1'))
+    assert.equal(tenantRes.status, 200)
+    assert.deepEqual(capturedWhere[0], {
+      workOrder: { submittedById: 'tenant-user' },
+      propertyId: 'prop-1',
+    })
+
+    sessionProvider.getSession = async () => makeSession('MANAGER', 'mgr-1')
     const managerRes = await documentsGET(
       new Request('http://localhost/api/documents?propertyId=prop-1&scopeType=workorder')
     )
     assert.equal(managerRes.status, 200)
-    assert.deepEqual(capturedWhere, {
+    assert.deepEqual(capturedWhere[1], {
       OR: [
         { property: { managerId: 'mgr-1' } },
         { workOrder: { property: { managerId: 'mgr-1' } } },
@@ -45,7 +51,7 @@ test('GET /api/documents enforces tenant deny and manager property scoping', asy
     })
   } finally {
     sessionProvider.getSession = originalGetSession
-    ;(prisma.document as any).findMany = originalFindMany
+    documentQueries.findMany = originalFindMany
   }
 })
 
@@ -81,6 +87,56 @@ test('GET /api/workorders/[id] applies manager scope in prisma query', async () 
   } finally {
     sessionProvider.getSession = originalGetSession
     ;(prisma.workOrder as any).findFirst = originalFindFirst
+  }
+})
+
+test('POST /api/documents rejects disallowed file types', async () => {
+  const originalGetSession = sessionProvider.getSession
+  try {
+    sessionProvider.getSession = async () => makeSession('ADMIN', 'admin-1')
+    const form = new FormData()
+    form.set('file', new Blob(['<script>alert(1)</script>'], { type: 'text/html' }), 'payload.html')
+    form.set('scopeType', 'workorder')
+    form.set('scopeId', 'wo-1')
+    form.set('propertyId', 'prop-1')
+
+    const res = await documentsPOST(
+      new Request('http://localhost/api/documents', {
+        method: 'POST',
+        body: form,
+      })
+    )
+    assert.equal(res.status, 400)
+    const body = await res.json()
+    assert.equal(body.error, 'file extension not allowed')
+  } finally {
+    sessionProvider.getSession = originalGetSession
+  }
+})
+
+test('POST /api/documents rejects manager upload for unmanaged work order', async () => {
+  const originalGetSession = sessionProvider.getSession
+  const originalWorkOrderFindFirst = (prisma.workOrder as any).findFirst
+  try {
+    sessionProvider.getSession = async () => makeSession('MANAGER', 'mgr-1')
+    ;(prisma.workOrder as any).findFirst = async () => null
+
+    const form = new FormData()
+    form.set('file', new Blob(['x'], { type: 'application/pdf' }), 'file.pdf')
+    form.set('scopeType', 'workorder')
+    form.set('scopeId', 'wo-x')
+    form.set('workOrderId', 'wo-x')
+
+    const res = await documentsPOST(
+      new Request('http://localhost/api/documents', {
+        method: 'POST',
+        body: form,
+      })
+    )
+    assert.equal(res.status, 404)
+  } finally {
+    sessionProvider.getSession = originalGetSession
+    ;(prisma.workOrder as any).findFirst = originalWorkOrderFindFirst
   }
 })
 

@@ -1,10 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronLeft, Home, AlertTriangle, Calendar, DollarSign, MapPin, CheckCircle, RefreshCw } from 'lucide-react'
+import { ChevronLeft, Home, AlertTriangle, Calendar, DollarSign, MapPin, CheckCircle, RefreshCw, PenTool, Download } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
+import Button from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
+import { SignaturePad } from '@/components/ui/SignaturePad'
 import { LeaseStatusBadge } from '@/components/ui/Badge'
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell, TableEmptyState } from '@/components/ui/Table'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -18,6 +21,11 @@ export default function MyLeasePage() {
   const [renewStep, setRenewStep] = useState<0 | 1 | 2>(0)
   const [respondingOffer, setRespondingOffer] = useState<string | null>(null)
   const [acceptedEndDate, setAcceptedEndDate] = useState<string | null>(null)
+
+  // Lease signing + PDF
+  const [showSignModal, setShowSignModal] = useState(false)
+  const [signingLease, setSigningLease] = useState(false)
+  const [generatingPdf, setGeneratingPdf] = useState(false)
 
   // Self-service request state
   const [requestTerm, setRequestTerm] = useState<6 | 12 | 24>(12)
@@ -74,6 +82,28 @@ export default function MyLeasePage() {
     })
     setRequesting(false)
     setRequestSent(true)
+  }
+
+  async function handleSignLease(dataUrl: string) {
+    if (!data?.activeLease?.id) return
+    setSigningLease(true)
+    await fetch(`/api/leases/${data.activeLease.id}/sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature: dataUrl }),
+    })
+    setSigningLease(false)
+    setShowSignModal(false)
+    load()
+  }
+
+  async function handleGeneratePdf() {
+    if (!data?.activeLease?.id) return
+    setGeneratingPdf(true)
+    const res = await fetch(`/api/leases/${data.activeLease.id}/pdf`, { method: 'POST' })
+    const result = await res.json()
+    if (result.fileUrl) window.open(result.fileUrl, '_blank')
+    setGeneratingPdf(false)
   }
 
   if (loading) return (
@@ -334,6 +364,34 @@ export default function MyLeasePage() {
 
             <Card>
               <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <PenTool className="h-4 w-4 text-blue-500" /> Lease Document
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-500">Tenant Signature</span>
+                  {activeLease.tenantSignature ? (
+                    <span className="text-emerald-600 font-medium text-xs">Signed</span>
+                  ) : (
+                    <button onClick={() => setShowSignModal(true)} className="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg px-3 py-1.5 font-medium transition-colors">Sign Lease</button>
+                  )}
+                </div>
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-gray-500">Manager Signature</span>
+                  {activeLease.managerSignature ? (
+                    <span className="text-emerald-600 font-medium text-xs">Signed</span>
+                  ) : (
+                    <span className="text-gray-400 text-xs">Pending</span>
+                  )}
+                </div>
+                <button onClick={handleGeneratePdf} disabled={generatingPdf} className="w-full mt-2 flex items-center justify-center gap-2 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+                  <Download className="h-4 w-4" />
+                  {generatingPdf ? 'Generating…' : 'Download Lease PDF'}
+                </button>
+              </div>
+            </Card>
+
+            <Card>
+              <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-blue-500" /> Financials
               </h3>
               <div className="space-y-3">
@@ -434,6 +492,15 @@ export default function MyLeasePage() {
           </Table>
         </Card>
       )}
+
+      <Modal isOpen={showSignModal} onClose={() => setShowSignModal(false)} title="Sign Lease">
+        <SignaturePad
+          label="Draw your signature below to sign your lease"
+          onSave={handleSignLease}
+          onCancel={() => setShowSignModal(false)}
+        />
+        {signingLease && <p className="text-sm text-gray-400 mt-2 animate-pulse">Saving signature…</p>}
+      </Modal>
     </div>
   )
 }

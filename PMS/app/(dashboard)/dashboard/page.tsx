@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
-import { DoorOpen, Wrench, TrendingUp, AlertTriangle, Clock, Home, CreditCard, Plus, FileText, ExternalLink, X, Paperclip, Wand2 } from 'lucide-react'
+import { DoorOpen, Wrench, TrendingUp, AlertTriangle, Clock, Home, CreditCard, Plus, FileText, ExternalLink, X, Paperclip, Wand2, Camera, Trash2 } from 'lucide-react'
 import { StatsCard } from '@/components/ui/StatsCard'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell, TableEmptyState } from '@/components/ui/Table'
@@ -252,8 +252,9 @@ function TenantDashboard() {
   const [showWOModal, setShowWOModal] = useState(false)
   const [woForm, setWoForm] = useState({ title: '', description: '', category: 'GENERAL', priority: 'MEDIUM' })
   const [woSaving, setWOSaving] = useState(false)
-  const [woFile, setWoFile] = useState<File | null>(null)
+  const [woFiles, setWoFiles] = useState<File[]>([])
   const woFileRef = useRef<HTMLInputElement>(null)
+  const woCameraRef = useRef<HTMLInputElement>(null)
 
   // AI triage
   const [triageSuggestion, setTriageSuggestion] = useState<{ category: string; priority: string; urgencyNotes: string } | null>(null)
@@ -293,21 +294,24 @@ function TenantDashboard() {
       body: JSON.stringify({ ...woForm, propertyId, unitId }),
     })
     const wo = await res.json()
-    // Upload photo if provided
-    if (woFile && wo?.id) {
-      const fd = new FormData()
-      fd.append('file', woFile)
-      fd.append('scopeType', 'workorder')
-      fd.append('scopeId', wo.id)
-      fd.append('workOrderId', wo.id)
-      if (propertyId) fd.append('propertyId', propertyId)
-      await fetch('/api/documents', { method: 'POST', body: fd })
+    // Upload photos/attachments if provided
+    if (woFiles.length > 0 && wo?.id) {
+      for (const file of woFiles) {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('scopeType', 'workorder')
+        fd.append('scopeId', wo.id)
+        fd.append('workOrderId', wo.id)
+        if (propertyId) fd.append('propertyId', propertyId)
+        await fetch('/api/documents', { method: 'POST', body: fd })
+      }
     }
     setWOSaving(false)
     setShowWOModal(false)
     setWoForm({ title: '', description: '', category: 'GENERAL', priority: 'MEDIUM' })
-    setWoFile(null)
+    setWoFiles([])
     if (woFileRef.current) woFileRef.current.value = ''
+    if (woCameraRef.current) woCameraRef.current.value = ''
     load()
   }
 
@@ -442,16 +446,43 @@ function TenantDashboard() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   <Paperclip className="inline h-4 w-4 mr-1 text-gray-400" />
-                  Photo / Attachment (optional)
+                  Photos / Attachments (optional)
                 </label>
-                <input
-                  ref={woFileRef}
-                  type="file"
-                  accept="image/*,.pdf"
-                  className="w-full text-sm text-gray-600 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                  onChange={e => setWoFile(e.target.files?.[0] ?? null)}
-                />
-                {woFile && <p className="text-xs text-gray-400 mt-1">{woFile.name}</p>}
+                <div className="flex gap-2">
+                  <label className="flex-1 cursor-pointer">
+                    <input
+                      ref={woFileRef}
+                      type="file"
+                      accept="image/*,.pdf,.doc,.docx"
+                      multiple
+                      className="w-full text-sm text-gray-600 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      onChange={e => { if (e.target.files) setWoFiles(prev => [...prev, ...Array.from(e.target.files!)]) }}
+                    />
+                  </label>
+                  <label className="cursor-pointer flex items-center gap-1 px-3 py-1 rounded-md bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100">
+                    <Camera className="h-4 w-4" />
+                    <span className="hidden sm:inline">Camera</span>
+                    <input
+                      ref={woCameraRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      multiple
+                      className="hidden"
+                      onChange={e => { if (e.target.files) setWoFiles(prev => [...prev, ...Array.from(e.target.files!)]) }}
+                    />
+                  </label>
+                </div>
+                {woFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {woFiles.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded">
+                        <span className="truncate">{f.name}</span>
+                        <button type="button" onClick={() => setWoFiles(prev => prev.filter((_, j) => j !== i))} className="ml-2 text-red-400 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setShowWOModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
@@ -472,8 +503,9 @@ export default function DashboardPage() {
   const router = useRouter()
 
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.systemRole === 'VENDOR') {
-      router.replace('/dashboard/vendor-portal')
+    if (status === 'authenticated') {
+      if (session?.user?.systemRole === 'VENDOR') router.replace('/dashboard/vendor-portal')
+      if (session?.user?.systemRole === 'OWNER') router.replace('/dashboard/owner-portal')
     }
   }, [status, session, router])
 
@@ -484,6 +516,6 @@ export default function DashboardPage() {
   )
 
   const role = session?.user?.systemRole
-  if (role === 'VENDOR') return null   // redirecting via useEffect
+  if (role === 'VENDOR' || role === 'OWNER') return null   // redirecting via useEffect
   return role === 'TENANT' ? <TenantDashboard /> : <ManagerDashboard />
 }

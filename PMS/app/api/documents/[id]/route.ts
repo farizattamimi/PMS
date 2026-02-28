@@ -2,13 +2,26 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { unlink } from 'fs/promises'
-import path from 'path'
 import { isAdmin, isManager } from '@/lib/access'
 import { sessionProvider } from '@/lib/session-provider'
+import { checkRateLimit, rateLimitHeaders, resolveRateLimitKey } from '@/lib/rate-limit'
+import { resolveLegacyPublicDocumentPath, resolvePrivateDocumentPath } from '@/lib/document-storage'
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const session = await sessionProvider.getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const rate = await checkRateLimit({
+    bucket: 'documents-delete',
+    key: resolveRateLimitKey(req, session.user.id),
+    limit: 30,
+    windowMs: 60_000,
+  })
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please retry shortly.' },
+      { status: 429, headers: rateLimitHeaders(rate) }
+    )
+  }
 
   const doc = await prisma.document.findUnique({
     where: { id: params.id },
@@ -34,9 +47,10 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
 
   // Delete file from disk
   try {
-    const relativeFilePath = doc.fileUrl.replace(/^\/+/, '')
-    const filePath = path.join(process.cwd(), 'public', relativeFilePath)
-    await unlink(filePath)
+    const privatePath = resolvePrivateDocumentPath(doc.fileUrl)
+    const legacyPath = privatePath ? null : resolveLegacyPublicDocumentPath(doc.fileUrl)
+    const filePath = privatePath ?? legacyPath
+    if (filePath) await unlink(filePath)
   } catch {
     // File may already be gone — continue
   }
@@ -51,5 +65,5 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     diff: { fileName: doc.fileName },
   })
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true }, { headers: rateLimitHeaders(rate) })
 }

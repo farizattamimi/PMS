@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { assertManagerOwnsProperty, isManager } from '@/lib/access'
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -17,6 +17,11 @@ export async function GET(req: Request) {
   const where: any = {}
   if (propertyId) where.propertyId = propertyId
   if (unitId) where.unitId = unitId
+
+  // Manager scope: only show assets on their properties
+  if (isManager(session) && !propertyId) {
+    where.property = { managerId: session.user.id }
+  }
 
   const assets = await prisma.asset.findMany({
     where,
@@ -31,7 +36,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -41,6 +46,10 @@ export async function POST(req: Request) {
 
   if (!propertyId || !name || !category) {
     return NextResponse.json({ error: 'propertyId, name, and category are required' }, { status: 400 })
+  }
+
+  if (!(await assertManagerOwnsProperty(session, propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const asset = await prisma.asset.create({

@@ -12,12 +12,14 @@ import { POST as exceptionDecisionPOST } from '@/app/api/agent/exceptions/[id]/d
 import { GET as kpisGET } from '@/app/api/agent/kpis/route'
 import { GET as runsStreamGET } from '@/app/api/agent/runs/stream/route'
 import { GET as runStreamGET } from '@/app/api/agent/runs/[id]/stream/route'
+import { POST as runAgentPOST } from '@/app/api/agent/run/route'
+import { PATCH as settingsPATCH } from '@/app/api/agent/settings/route'
 import { GET as policiesGET } from '@/app/api/agent/policies/route'
 import { POST as policyEvaluatePOST } from '@/app/api/agent/policies/evaluate/route'
 
 function makeSession(role: 'ADMIN' | 'MANAGER' | 'TENANT', id: string): Session {
   return {
-    user: { id, systemRole: role, name: null, email: null, image: null },
+    user: { id, systemRole: role, name: null, email: null, image: null, orgId: null },
     expires: '2099-01-01T00:00:00.000Z',
   }
 }
@@ -50,7 +52,7 @@ test('GET /api/agent/runs denies non-manager/operator roles', async () => {
   const originalGetSession = sessionProvider.getSession
   try {
     sessionProvider.getSession = async () => ({
-      user: { id: 'vendor-1', systemRole: 'VENDOR', name: null, email: null, image: null } as any,
+      user: { id: 'vendor-1', systemRole: 'VENDOR', name: null, email: null, image: null, orgId: null } as any,
       expires: '2099-01-01T00:00:00.000Z',
     } as Session)
     const res = await runsGET(new Request('http://localhost/api/agent/runs'))
@@ -282,5 +284,38 @@ test('POST /api/agent/policies/evaluate rejects manager access to unowned proper
   } finally {
     sessionProvider.getSession = originalGetSession
     ;(prisma.property as any).findMany = originalPropertyFindMany
+  }
+})
+
+test('POST /api/agent/run requires MANAGER role', async () => {
+  const originalGetSession = sessionProvider.getSession
+  try {
+    sessionProvider.getSession = async () => makeSession('ADMIN', 'admin-1')
+    const res = await runAgentPOST(new Request('http://localhost/api/agent/run', { method: 'POST' }))
+    assert.equal(res.status, 401)
+  } finally {
+    sessionProvider.getSession = originalGetSession
+  }
+})
+
+test('PATCH /api/agent/settings validates autoExecuteTypes and tone', async () => {
+  const originalGetSession = sessionProvider.getSession
+  try {
+    sessionProvider.getSession = async () => makeSession('MANAGER', 'mgr-1')
+    const invalidTypeRes = await settingsPATCH(new Request('http://localhost/api/agent/settings', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoExecuteTypes: ['DROP_DATABASE'] }),
+    }))
+    assert.equal(invalidTypeRes.status, 400)
+
+    const invalidToneRes = await settingsPATCH(new Request('http://localhost/api/agent/settings', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tone: 'aggressive' }),
+    }))
+    assert.equal(invalidToneRes.status, 400)
+  } finally {
+    sessionProvider.getSession = originalGetSession
   }
 })

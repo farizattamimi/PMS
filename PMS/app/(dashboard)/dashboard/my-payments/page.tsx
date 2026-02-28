@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ChevronLeft, CreditCard, Plus } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { ChevronLeft, CreditCard, ExternalLink, Plus } from 'lucide-react'
 import Link from 'next/link'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
@@ -9,6 +10,7 @@ import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell, TableEmp
 import { formatCurrency, formatDate } from '@/lib/utils'
 
 export default function MyPaymentsPage() {
+  const searchParams = useSearchParams()
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [showPayModal, setShowPayModal] = useState(false)
@@ -16,6 +18,7 @@ export default function MyPaymentsPage() {
   const [payMemo, setPayMemo] = useState('')
   const [paying, setPaying] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
   async function load() {
     fetch('/api/portal').then(r => r.json()).then(setData).finally(() => setLoading(false))
@@ -23,30 +26,56 @@ export default function MyPaymentsPage() {
 
   useEffect(() => { load() }, [])
 
+  // Handle Stripe redirect query params
+  useEffect(() => {
+    const paymentStatus = searchParams.get('payment')
+    if (paymentStatus === 'success') {
+      setSuccessMsg('Payment completed successfully! Your balance will update shortly.')
+      // Clean up the URL
+      window.history.replaceState({}, '', '/dashboard/my-payments')
+      // Refresh data after a moment to pick up the webhook-created entry
+      setTimeout(() => load(), 2000)
+    } else if (paymentStatus === 'cancelled') {
+      setErrorMsg('Payment was cancelled. No charge was made.')
+      window.history.replaceState({}, '', '/dashboard/my-payments')
+    }
+  }, [searchParams])
+
   async function handlePay(e: React.FormEvent) {
     e.preventDefault()
     const leaseId = data?.activeLease?.id
     if (!leaseId) return
     setPaying(true)
-    // A payment is a negative RENT entry (reduces balance)
-    await fetch('/api/ledger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        leaseId,
-        type: 'RENT',
-        amount: -Math.abs(parseFloat(payAmount)),
-        effectiveDate: new Date().toISOString().split('T')[0],
-        memo: payMemo || 'Tenant payment',
-      }),
-    })
+    setErrorMsg('')
+
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: Math.abs(parseFloat(payAmount)),
+          memo: payMemo || 'Tenant payment',
+        }),
+      })
+      const result = await res.json()
+
+      if (!res.ok) {
+        setErrorMsg(result.error || 'Failed to create checkout session')
+        setPaying(false)
+        return
+      }
+
+      // Redirect to Stripe Checkout
+      if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl
+        return
+      }
+
+      setErrorMsg('No checkout URL returned')
+    } catch {
+      setErrorMsg('Failed to connect to payment service')
+    }
     setPaying(false)
-    setShowPayModal(false)
-    setPayAmount('')
-    setPayMemo('')
-    setSuccessMsg('Payment submitted successfully.')
-    setTimeout(() => setSuccessMsg(''), 4000)
-    load()
   }
 
   if (loading) return (
@@ -87,6 +116,12 @@ export default function MyPaymentsPage() {
       {successMsg && (
         <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
           {successMsg}
+        </div>
+      )}
+
+      {errorMsg && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+          {errorMsg}
         </div>
       )}
 
@@ -135,6 +170,7 @@ export default function MyPaymentsPage() {
                   <TableHeader>Charge</TableHeader>
                   <TableHeader>Payment</TableHeader>
                   <TableHeader>Balance</TableHeader>
+                  <TableHeader>Receipt</TableHeader>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -154,6 +190,18 @@ export default function MyPaymentsPage() {
                         <TableCell className="text-green-700 font-medium text-sm">{e.amount < 0 ? formatCurrency(Math.abs(e.amount)) : '—'}</TableCell>
                         <TableCell className={`font-medium text-sm ${running >= 0 ? 'text-red-700' : 'text-green-700'}`}>
                           {formatCurrency(Math.abs(running))} {running >= 0 ? 'owed' : 'credit'}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {e.stripeReceiptUrl ? (
+                            <a
+                              href={e.stripeReceiptUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                            >
+                              Receipt <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ) : '—'}
                         </TableCell>
                       </TableRow>
                     )
@@ -198,11 +246,11 @@ export default function MyPaymentsPage() {
                 <input className={INPUT_CLS} value={payMemo} onChange={e => setPayMemo(e.target.value)} placeholder="e.g. March rent" />
               </div>
               <div className="bg-blue-50 text-blue-700 text-xs px-3 py-2 rounded-lg">
-                Payment will be recorded immediately in your account balance.
+                You will be redirected to Stripe to complete your payment securely.
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setShowPayModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                <button type="submit" disabled={paying} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">{paying ? 'Processing…' : 'Submit Payment'}</button>
+                <button type="submit" disabled={paying} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors">{paying ? 'Redirecting…' : 'Pay with Stripe'}</button>
               </div>
             </form>
           </div>

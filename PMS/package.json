@@ -14,12 +14,18 @@
     "db:studio": "prisma studio",
     "agent:daemon": "node scripts/agent-daemon.mjs",
     "agent:daemon:hourly": "AGENT_INTERVAL_MINUTES=60 node scripts/agent-daemon.mjs",
+    "agent:worker": "node scripts/agent-worker-daemon.mjs",
     "test:policy": "node --loader tsx --test tests/policy-engine.test.ts",
     "test:agent": "node --loader tsx --test tests/agent/autopilot.test.ts",
     "test:comms": "node --loader tsx --test tests/agent/tenant-comms-autopilot.test.ts",
     "test:compliance": "node --loader tsx --test tests/agent/compliance-pm-autopilot.test.ts",
     "test:sla": "node --loader tsx --test tests/agent/sla-breach-autopilot.test.ts",
-    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts tests/agent/tenant-comms-autopilot.test.ts tests/agent/compliance-pm-autopilot.test.ts tests/agent/sla-breach-autopilot.test.ts"
+    "test:stripe": "node --loader tsx --test tests/stripe/checkout.test.ts",
+    "test:screening": "node --loader tsx --test tests/screening/screening.test.ts",
+    "test:iif": "node --loader tsx --test tests/iif.test.ts",
+    "test:new-features": "node --loader tsx --test tests/new-features/authz-and-security.test.ts",
+    "test:security": "node --loader tsx --test tests/security/codebase-hardening.test.ts",
+    "test:all": "node --loader tsx --test tests/policy-engine.test.ts tests/agent/autopilot.test.ts tests/agent/tenant-comms-autopilot.test.ts tests/agent/compliance-pm-autopilot.test.ts tests/agent/sla-breach-autopilot.test.ts tests/stripe/checkout.test.ts tests/screening/screening.test.ts tests/iif.test.ts tests/new-features/authz-and-security.test.ts tests/security/codebase-hardening.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -27,22 +33,25 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@prisma/client": "^5.22.0",
+    "@react-email/render": "^2.0.4",
+    "@react-pdf/renderer": "^4.3.2",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "lucide-react": "^0.575.0",
     "next": "^13.5.6",
     "next-auth": "^4.24.13",
-    "nodemailer": "^7.0.13",
     "prisma": "^5.22.0",
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^3.7.0",
-    "tailwind-merge": "^3.5.0"
+    "resend": "^6.9.2",
+    "stripe": "^20.4.0",
+    "tailwind-merge": "^3.5.0",
+    "twilio": "^5.12.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
     "@types/node": "^20",
-    "@types/nodemailer": "^7.0.11",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",

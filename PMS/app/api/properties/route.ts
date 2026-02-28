@@ -3,14 +3,15 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const where = session.user.systemRole === 'MANAGER'
-    ? { managerId: session.user.id }
-    : {}
+    ? { managerId: session.user.id, ...orgScopeWhere(session) }
+    : { ...orgScopeWhere(session) }
 
   const properties = await prisma.property.findMany({
     where,

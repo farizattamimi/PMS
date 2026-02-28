@@ -11,7 +11,7 @@
 //   6. Checks for any PM schedules that are overdue and not yet WO'd
 
 import { prisma } from '../prisma'
-import { createNotification } from '../notify'
+import { deliverNotification } from '../deliver'
 import { evaluateAction } from '../policy-engine'
 import type { ComplianceCategory, WorkOrderCategory, WorkOrderPriority } from '@prisma/client'
 import {
@@ -163,7 +163,7 @@ export async function runCompliancePMAutopilot(data: TriggerData): Promise<void>
           requiresBy: isOverdue ? new Date(Date.now() + 24 * 60 * 60 * 1000) : new Date(item.dueDate),
         })
 
-        await createNotification({
+        await deliverNotification({
           userId: property.managerId,
           title: isOverdue
             ? `URGENT: Compliance item overdue — ${item.title}`
@@ -197,7 +197,7 @@ export async function runCompliancePMAutopilot(data: TriggerData): Promise<void>
           },
         })
 
-        await createNotification({
+        await deliverNotification({
           userId: property.managerId,
           title: `Compliance item needs action: ${item.title}`,
           body: `${property.name} · ${daysUntilDue < 0 ? 'Overdue' : `Due in ${daysUntilDue}d`} · Auto-WO creation disabled by policy`,
@@ -242,7 +242,7 @@ export async function runCompliancePMAutopilot(data: TriggerData): Promise<void>
             responseJson: { workOrderId: wo.id },
           })
 
-          await createNotification({
+          await deliverNotification({
             userId: property.managerId,
             title: `Agent: Compliance WO created — ${item.title}`,
             body: `${property.name} · WO created (${priority} priority) · Due: ${item.dueDate.toISOString().slice(0, 10)}`,

@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
-import { createNotification } from '@/lib/notify'
+import { deliverNotification } from '@/lib/deliver'
 import { writeAudit } from '@/lib/audit'
 
 export async function PATCH(req: Request, { params }: { params: { id: string; offerId: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const offer = await prisma.leaseRenewalOffer.findUnique({
@@ -70,7 +69,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; of
       } else {
         notifBody = `Tenant declined the renewal offer for ${propertyName}.`
       }
-      await createNotification({
+      await deliverNotification({
         userId: managerId,
         title: `Renewal offer ${status.toLowerCase()}`,
         body: notifBody,

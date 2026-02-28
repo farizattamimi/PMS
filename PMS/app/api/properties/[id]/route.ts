@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { isTenant, propertyScopeWhere } from '@/lib/access'
 
+const ALLOWED_PATCH_FIELDS = ['name', 'address', 'city', 'state', 'zip', 'type', 'status']
+
 export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (isTenant(session)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -58,7 +59,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || isTenant(session)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -72,9 +73,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const body = await req.json()
+  const data: Record<string, unknown> = {}
+  for (const f of ALLOWED_PATCH_FIELDS) {
+    if (body[f] !== undefined) data[f] = body[f]
+  }
+
   const property = await prisma.property.update({
     where: { id: params.id },
-    data: body,
+    data,
   })
 
   await writeAudit({
@@ -82,14 +88,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     action: body.status && body.status !== existing.status ? 'STATUS_CHANGE' : 'UPDATE',
     entityType: 'Property',
     entityId: params.id,
-    diff: { before: { status: existing.status }, after: body },
+    diff: { before: { status: existing.status }, after: data },
   })
 
   return NextResponse.json(property)
 }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole !== 'ADMIN') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

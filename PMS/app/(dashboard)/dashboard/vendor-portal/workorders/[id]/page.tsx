@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { WorkOrderPriorityBadge, WorkOrderStatusBadge } from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import { formatDate } from '@/lib/utils'
+import PhotoUploader from '@/components/ui/PhotoUploader'
 
 interface WorkOrder {
   id: string
@@ -40,6 +41,13 @@ export default function VendorWODetailPage({ params }: { params: { id: string } 
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState('')
   const [success, setSuccess] = useState('')
+  const [documents, setDocuments] = useState<any[]>([])
+
+  const loadDocs = useCallback(async () => {
+    const res = await fetch(`/api/documents?scopeType=workorder&scopeId=${params.id}`)
+    const data = await res.json()
+    setDocuments(Array.isArray(data) ? data : [])
+  }, [params.id])
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/vendor-portal/workorders/${params.id}`)
@@ -52,6 +60,7 @@ export default function VendorWODetailPage({ params }: { params: { id: string } 
   }, [params.id])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { loadDocs() }, [loadDocs])
 
   async function transition(to: Transition) {
     setSaving(true); setError(''); setSuccess('')
@@ -194,6 +203,15 @@ export default function VendorWODetailPage({ params }: { params: { id: string } 
           <p className="text-sm text-gray-700 whitespace-pre-wrap">{wo.signOffNotes}</p>
         </Card>
       )}
+
+      {/* Photos & Attachments */}
+      <Card className="p-5 mb-5">
+        <PhotoUploader
+          workOrderId={wo.id}
+          documents={documents}
+          onUploadComplete={loadDocs}
+        />
+      </Card>
 
       {/* Costs */}
       {wo.costs.length > 0 && (

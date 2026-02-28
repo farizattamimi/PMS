@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useSession } from 'next-auth/react'
-import { Plus, Layers, CheckSquare } from 'lucide-react'
+import { useRef } from 'react'
+import { Plus, Layers, CheckSquare, Paperclip, Camera, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
@@ -31,6 +32,9 @@ export default function WorkOrdersPage() {
   const [form, setForm] = useState({ propertyId: '', unitId: '', title: '', description: '', category: 'GENERAL', priority: 'MEDIUM' })
   const [saving, setSaving] = useState(false)
   const [units, setUnits]   = useState<any[]>([])
+  const [createFiles, setCreateFiles] = useState<File[]>([])
+  const createFileRef = useRef<HTMLInputElement>(null)
+  const createCameraRef = useRef<HTMLInputElement>(null)
 
   // Bulk selection
   const [selected, setSelected]         = useState<Set<string>>(new Set())
@@ -71,14 +75,30 @@ export default function WorkOrdersPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
-    await fetch('/api/workorders', {
+    const res = await fetch('/api/workorders', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ ...form, unitId: form.unitId || undefined }),
     })
+    const wo = await res.json()
+    // Upload attachments if provided
+    if (createFiles.length > 0 && wo?.id) {
+      for (const file of createFiles) {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('scopeType', 'workorder')
+        fd.append('scopeId', wo.id)
+        fd.append('workOrderId', wo.id)
+        if (form.propertyId) fd.append('propertyId', form.propertyId)
+        await fetch('/api/documents', { method: 'POST', body: fd })
+      }
+    }
     setSaving(false)
     setShowModal(false)
     setForm({ propertyId: '', unitId: '', title: '', description: '', category: 'GENERAL', priority: 'MEDIUM' })
+    setCreateFiles([])
+    if (createFileRef.current) createFileRef.current.value = ''
+    if (createCameraRef.current) createCameraRef.current.value = ''
     load()
   }
 
@@ -323,6 +343,47 @@ export default function WorkOrdersPage() {
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Category</label><select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Priority</label><select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" value={form.priority} onChange={e => setForm({...form, priority: e.target.value})}>{PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}</select></div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                <Paperclip className="inline h-4 w-4 mr-1 text-gray-400" />
+                Attachments (optional)
+              </label>
+              <div className="flex gap-2">
+                <label className="flex-1 cursor-pointer">
+                  <input
+                    ref={createFileRef}
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx"
+                    multiple
+                    className="w-full text-sm text-gray-600 file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    onChange={e => { if (e.target.files) setCreateFiles(prev => [...prev, ...Array.from(e.target.files!)]) }}
+                  />
+                </label>
+                <label className="cursor-pointer flex items-center gap-1 px-3 py-1 rounded-md bg-blue-50 text-blue-700 text-sm font-medium hover:bg-blue-100">
+                  <Camera className="h-4 w-4" />
+                  <span className="hidden sm:inline">Camera</span>
+                  <input
+                    ref={createCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    multiple
+                    className="hidden"
+                    onChange={e => { if (e.target.files) setCreateFiles(prev => [...prev, ...Array.from(e.target.files!)]) }}
+                  />
+                </label>
+              </div>
+              {createFiles.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {createFiles.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded">
+                      <span className="truncate">{f.name}</span>
+                      <button type="button" onClick={() => setCreateFiles(prev => prev.filter((_, j) => j !== i))} className="ml-2 text-red-400 hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setShowModal(false)}>Cancel</Button>

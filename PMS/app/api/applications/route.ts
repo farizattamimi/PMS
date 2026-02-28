@@ -48,6 +48,11 @@ export async function GET(req: Request) {
       property: { select: { id: true, name: true } },
       unit: { select: { id: true, unitNumber: true } },
       tenant: { select: { id: true } },
+      screeningReports: {
+        orderBy: { createdAt: 'desc' as const },
+        take: 1,
+        select: { id: true, overallStatus: true, creditScore: true },
+      },
     },
     orderBy: { createdAt: 'desc' },
   })

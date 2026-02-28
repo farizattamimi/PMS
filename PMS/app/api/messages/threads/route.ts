@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { deliverNotification } from '@/lib/deliver'
 import {
   isManager,
   isTenant,
@@ -140,28 +141,22 @@ export async function POST(req: Request) {
   // Notify the other party
   const authorIsManagerSide = session.user.systemRole !== 'TENANT'
   if (authorIsManagerSide) {
-    // Notify tenant
-    await prisma.notification.create({
-      data: {
-        userId: thread.tenant.user.id,
-        title: `New message from your property manager`,
-        body: `Re: ${subject}`,
-        type: 'GENERAL',
-        entityType: 'MessageThread',
-        entityId: thread.id,
-      },
+    await deliverNotification({
+      userId: thread.tenant.user.id,
+      title: `New message from your property manager`,
+      body: `Re: ${subject}`,
+      type: 'GENERAL',
+      entityType: 'MessageThread',
+      entityId: thread.id,
     })
   } else {
-    // Notify property manager
-    await prisma.notification.create({
-      data: {
-        userId: thread.property.managerId,
-        title: `New message from ${thread.tenant.user.name}`,
-        body: `Re: ${subject}`,
-        type: 'GENERAL',
-        entityType: 'MessageThread',
-        entityId: thread.id,
-      },
+    await deliverNotification({
+      userId: thread.property.managerId,
+      title: `New message from ${thread.tenant.user.name}`,
+      body: `Re: ${subject}`,
+      type: 'GENERAL',
+      entityType: 'MessageThread',
+      entityId: thread.id,
     })
   }
 

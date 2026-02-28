@@ -1,16 +1,17 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
-import { ChevronLeft, Plus, Upload, FileText, ExternalLink, Trash2, Star, CheckCircle, MessageSquare, Send, Wand2 } from 'lucide-react'
+import { ChevronLeft, Plus, Star, CheckCircle, MessageSquare, Send, Wand2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import { WorkOrderPriorityBadge, WorkOrderStatusBadge } from '@/components/ui/Badge'
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell, TableEmptyState } from '@/components/ui/Table'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import PhotoUploader from '@/components/ui/PhotoUploader'
 
 const STATUS_FLOW = ['NEW', 'ASSIGNED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'CANCELED']
 const VALID_NEXT: Record<string, string[]> = {
@@ -35,8 +36,7 @@ export default function WorkOrderDetailPage() {
 
   // Attachments
   const [documents, setDocuments] = useState<any[]>([])
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+
 
   // Bids
   const [bids, setBids] = useState<any[]>([])
@@ -135,21 +135,6 @@ export default function WorkOrderDetailPage() {
       }).catch(() => {})
     }
   }, [wo?.signedOffBy, signerName])
-
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    const fd = new FormData()
-    fd.append('file', file)
-    fd.append('scopeType', 'workorder')
-    fd.append('scopeId', id as string)
-    fd.append('workOrderId', id as string)
-    await fetch('/api/documents', { method: 'POST', body: fd })
-    setUploading(false)
-    loadDocs()
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
 
   async function handleDeleteDoc(docId: string) {
     await fetch(`/api/documents/${docId}`, { method: 'DELETE' })
@@ -326,38 +311,14 @@ export default function WorkOrderDetailPage() {
             </div>
           </Card>
 
-          {/* Attachments */}
+          {/* Photos & Attachments */}
           <Card>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Attachments</h3>
-              <label className="cursor-pointer flex items-center gap-1 text-sm text-blue-600 hover:underline">
-                <Upload className="h-4 w-4" />
-                {uploading ? 'Uploading…' : 'Upload'}
-                <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
-              </label>
-            </div>
-            {documents.length === 0 ? (
-              <p className="text-sm text-gray-400">No attachments yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {documents.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                      <span className="text-sm text-gray-700">{doc.fileName}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                      <button onClick={() => handleDeleteDoc(doc.id)} className="text-red-400 hover:text-red-600">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <PhotoUploader
+              workOrderId={id as string}
+              documents={documents}
+              onUploadComplete={loadDocs}
+              onDelete={isManager ? handleDeleteDoc : undefined}
+            />
           </Card>
 
           {/* Bids */}

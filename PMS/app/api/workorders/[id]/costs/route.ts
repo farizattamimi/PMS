@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { workOrderScopeWhere } from '@/lib/access'
+import { writeAudit } from '@/lib/audit'
 import { WorkOrderCostType } from '@prisma/client'
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const workOrder = await prisma.workOrder.findFirst({
@@ -27,7 +27,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -55,6 +55,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       amount: parseFloat(amount),
       memo: memo ?? null,
     },
+  })
+
+  await writeAudit({
+    actorUserId: session.user.id,
+    action: 'CREATE',
+    entityType: 'WorkOrderCost',
+    entityId: cost.id,
+    diff: { workOrderId: params.id, costType: costType ?? 'OTHER', amount },
   })
 
   return NextResponse.json(cost, { status: 201 })

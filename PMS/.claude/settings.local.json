@@ -25,7 +25,12 @@
       "Bash(echo ===:*)",
       "Bash($GIT:*)",
       "Bash(GIT=\"/usr/local/Homebrew/Library/Homebrew/shims/scm/git\" $GIT -C /Users/RIA git status)",
-      "Bash(echo exit: $?:*)"
+      "Bash(echo exit: $?:*)",
+      "Bash(which git && /usr/bin/git --version 2>&1 || /usr/local/bin/git --version 2>&1 || /opt/homebrew/bin/git --version 2>&1)",
+      "Bash(sudo xcodebuild:*)",
+      "Bash(git:*)",
+      "Bash(find:*)",
+      "Bash(xargs basename:*)"
     ]
   }
 }

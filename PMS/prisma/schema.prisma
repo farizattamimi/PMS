@@ -14,6 +14,7 @@ enum SystemRole {
   MANAGER
   TENANT
   VENDOR
+  OWNER
 }
 
 enum OrgType {
@@ -236,6 +237,34 @@ enum ApplicationStatus {
   WITHDRAWN
 }
 
+enum ScreeningStatus {
+  PENDING
+  CLEAR
+  FLAG
+  FAIL
+}
+
+enum OnboardingStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum OnboardingTaskType {
+  DOCUMENT_UPLOAD
+  SIGNATURE
+  PAYMENT
+  INSPECTION
+  INFO
+  CUSTOM
+}
+
+enum DistributionStatus {
+  DRAFT
+  APPROVED
+  PAID
+}
+
 enum AgentActionType {
   SEND_MESSAGE
   ASSIGN_VENDOR
@@ -264,10 +293,19 @@ model Organization {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  users       User[]
-  properties  Property[]  @relation("PropertyOrg")
-  ownedProps  Property[]  @relation("PropertyOwnerOrg")
-  vendors     Vendor[]
+  users         User[]
+  properties    Property[]  @relation("PropertyOrg")
+  ownedProps    Property[]  @relation("PropertyOwnerOrg")
+  vendors       Vendor[]
+  distributions Distribution[] @relation("DistributionOwnerOrg")
+
+  // White-label branding
+  logoUrl       String?
+  primaryColor  String?
+  accentColor   String?
+  domain        String?   @unique
+  supportEmail  String?
+  supportPhone  String?
 }
 
 model User {
@@ -282,6 +320,8 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  phone        String?
+
   managedProperties Property[]  @relation("PropertyManager")
   tenant            Tenant?
   vendor            Vendor?
@@ -292,6 +332,7 @@ model User {
   notifications     Notification[]
   agentActions      AgentAction[] @relation("AgentActionManager")
   agentSettings     AgentSettings?
+  notificationPreferences NotificationPreference[]
 }
 
 model AppRole {
@@ -347,6 +388,13 @@ model Property {
   complianceItems ComplianceItem[]
   applications TenantApplication[]
   agentActions AgentAction[]  @relation("AgentActionProperty")
+  distributions Distribution[]
+
+  // Late fee automation
+  lateFeeEnabled  Boolean @default(false)
+  lateFeeFlat     Float?
+  lateFeePct      Float?
+  gracePeriodDays Int     @default(5)
 }
 
 model Building {
@@ -416,12 +464,15 @@ model Lease {
   monthlyRent   Float
   depositAmount Float       @default(0)
   status        LeaseStatus @default(DRAFT)
-  signedAt      DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  signedAt         DateTime?
+  tenantSignature  String?
+  managerSignature String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   ledgerEntries  LedgerEntry[]
   renewalOffers  LeaseRenewalOffer[]
+  onboarding     OnboardingChecklist?
 }
 
 model LedgerEntry {
@@ -435,6 +486,9 @@ model LedgerEntry {
   currency      String          @default("USD")
   effectiveDate DateTime
   memo          String?
+  stripeSessionId       String?   @unique
+  stripePaymentIntentId String?   @unique
+  stripeReceiptUrl      String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -802,6 +856,34 @@ model TenantApplication {
 
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+
+  screeningReports ScreeningReport[]
+}
+
+model ScreeningReport {
+  id               String           @id @default(cuid())
+  applicationId    String
+  application      TenantApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  creditScore      Int?
+  creditStatus     ScreeningStatus  @default(PENDING)
+  creditNotes      String?
+  backgroundStatus ScreeningStatus  @default(PENDING)
+  backgroundNotes  String?
+  evictionStatus   ScreeningStatus  @default(PENDING)
+  evictionNotes    String?
+  incomeVerified   Boolean?
+  incomeRatio      Float?
+  incomeStatus     ScreeningStatus  @default(PENDING)
+  incomeNotes      String?
+  overallStatus    ScreeningStatus  @default(PENDING)
+  providerRef      String?
+  rawResponse      Json?
+  requestedById    String
+  completedAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([applicationId])
 }
 
 // ── Phase 8 Models ──────────────────────────────────────────────────────────
@@ -937,4 +1019,91 @@ model AgentMemory {
   updatedAt  DateTime @updatedAt
 
   @@unique([scopeType, scopeId, key])
+}
+
+// ── Notification Delivery ────────────────────────────────────────────────────
+
+enum DeliveryChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+model NotificationPreference {
+  id               String          @id @default(cuid())
+  userId           String
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notificationType String          // "WO_STATUS", "LEASE_EXPIRING", etc. or "*" for global default
+  channel          DeliveryChannel
+  enabled          Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([userId, notificationType, channel])
+  @@index([userId])
+}
+
+model DeliveryLog {
+  id             String          @id @default(cuid())
+  userId         String
+  channel        DeliveryChannel
+  recipient      String
+  status         String          // SENT | FAILED
+  externalId     String?
+  error          String?
+  createdAt      DateTime        @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ── Tenant Onboarding ────────────────────────────────────────────────────────
+
+model OnboardingChecklist {
+  id        String           @id @default(cuid())
+  leaseId   String           @unique
+  lease     Lease            @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  status    OnboardingStatus @default(PENDING)
+  tasks     OnboardingTask[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model OnboardingTask {
+  id            String              @id @default(cuid())
+  checklistId   String
+  checklist     OnboardingChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  taskType      OnboardingTaskType  @default(CUSTOM)
+  isRequired    Boolean             @default(true)
+  sortOrder     Int
+  completedAt   DateTime?
+  completedById String?
+  metadata      Json?
+  createdAt     DateTime            @default(now())
+
+  @@index([checklistId, sortOrder])
+}
+
+// ── Owner/Investor Distributions ─────────────────────────────────────────────
+
+model Distribution {
+  id               String             @id @default(cuid())
+  propertyId       String
+  property         Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  ownerOrgId       String
+  ownerOrg         Organization       @relation("DistributionOwnerOrg", fields: [ownerOrgId], references: [id])
+  period           String             // "YYYY-MM"
+  grossIncome      Float
+  expenses         Float
+  managementFee    Float
+  managementFeePct Float
+  netDistribution  Float
+  status           DistributionStatus @default(DRAFT)
+  paidAt           DateTime?
+  memo             String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([propertyId, ownerOrgId, period])
 }

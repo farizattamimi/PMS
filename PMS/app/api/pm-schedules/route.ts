@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -40,7 +39,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -52,12 +51,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'assetId, title, frequencyDays, nextDueAt required' }, { status: 400 })
   }
 
+  const freq = Number(frequencyDays)
+  if (!Number.isFinite(freq) || freq <= 0) {
+    return NextResponse.json({ error: 'frequencyDays must be a positive number' }, { status: 400 })
+  }
+
   const schedule = await prisma.pMSchedule.create({
     data: {
       assetId,
       title,
       description: description || null,
-      frequencyDays: Number(frequencyDays),
+      frequencyDays: freq,
       nextDueAt: new Date(nextDueAt),
       vendorId: vendorId || null,
       autoCreateWO: autoCreateWO ?? true,
@@ -73,7 +77,7 @@ export async function POST(req: Request) {
     action: 'CREATE',
     entityType: 'PMSchedule',
     entityId: schedule.id,
-    diff: { assetId, title, frequencyDays },
+    diff: { assetId, title, frequencyDays: freq },
   })
 
   return NextResponse.json(schedule, { status: 201 })

@@ -1,10 +1,12 @@
 import { prisma } from './prisma'
 import { anthropic, AI_MODEL } from './ai'
 import { writeAudit } from './audit'
-import { createNotification } from './notify'
+import { deliverNotification } from './deliver'
 import { AgentAction, AgentActionType, WorkOrderCategory } from '@prisma/client'
 import { evaluateAction } from './policy-engine'
 import { loadPolicyForProperty } from './agent-runtime'
+import { acquireManagerRunLock, releaseManagerRunLock } from './agent-run-lock'
+import { canExecuteAutonomy } from './safety-governor'
 
 export interface ExecuteResult {
   ok: boolean
@@ -303,7 +305,7 @@ export async function executeAction(
               select: { userId: true },
             })
             if (tenant?.userId) {
-              await createNotification({
+              await deliverNotification({
                 userId: tenant.userId,
                 title: 'New message from your manager',
                 body: (payload.body as string).slice(0, 120),
@@ -332,7 +334,7 @@ export async function executeAction(
             },
           })
           if (thread.tenant?.userId) {
-            await createNotification({
+            await deliverNotification({
               userId: thread.tenant.userId,
               title: 'New message from your manager',
               body: (payload.body as string).slice(0, 120),
@@ -438,7 +440,7 @@ export async function executeAction(
           },
         })
         if (lease.tenant?.user?.id) {
-          await createNotification({
+          await deliverNotification({
             userId: lease.tenant.user.id,
             title: 'Renewal offer from your manager',
             body: `You have a new lease renewal offer: ${termMonths} months at $${offeredRent}/mo.`,
@@ -502,9 +504,19 @@ interface AgentRunResult {
   actionsQueued: number
   actionsExecuted: number
   itemsReviewed: number
+  alreadyRunning?: boolean
+  disabled?: boolean
+  blockedByGovernor?: boolean
+  blockReason?: string
 }
 
 export async function runAgentForManager(managerId: string): Promise<AgentRunResult> {
+  const lock = await acquireManagerRunLock(managerId)
+  if (!lock) {
+    return { actionsQueued: 0, actionsExecuted: 0, itemsReviewed: 0, alreadyRunning: true }
+  }
+
+  try {
   const counters = { actionsQueued: 0, actionsExecuted: 0, itemsReviewed: 0 }
 
   // 1. Upsert settings
@@ -518,6 +530,14 @@ export async function runAgentForManager(managerId: string): Promise<AgentRunRes
       tone: 'professional',
     },
   })
+  if (!settings.enabled) {
+    return { ...counters, disabled: true }
+  }
+
+  const governor = await canExecuteAutonomy()
+  if (!governor.ok) {
+    return { ...counters, blockedByGovernor: true, blockReason: governor.reason ?? 'Blocked by governor' }
+  }
 
   // 2. Load managed properties
   const now = new Date()
@@ -842,7 +862,7 @@ Be specific and actionable. Only propose actions that are clearly needed based o
   // Notify manager if any actions need approval
   if (counters.actionsQueued > 0) {
     const n = counters.actionsQueued
-    await createNotification({
+    await deliverNotification({
       userId: managerId,
       title: `Agent queued ${n} action${n > 1 ? 's' : ''} for your review`,
       body: `${n} proposed action${n > 1 ? 's' : ''} need${n === 1 ? 's' : ''} your approval in the Agent Inbox.`,
@@ -853,4 +873,7 @@ Be specific and actionable. Only propose actions that are clearly needed based o
   }
 
   return counters
+  } finally {
+    await releaseManagerRunLock(lock)
+  }
 }

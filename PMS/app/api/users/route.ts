@@ -11,7 +11,9 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const orgId = (session.user as any).orgId
   const users = await prisma.user.findMany({
+    where: orgId ? { orgId } : {},
     select: {
       id: true,
       name: true,

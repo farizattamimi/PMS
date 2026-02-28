@@ -3,7 +3,7 @@
 // Trigger: PM due, new incident, or unassigned work order
 
 import { prisma } from '../prisma'
-import { createNotification } from '../notify'
+import { deliverNotification } from '../deliver'
 import { evaluateAction, type PolicyConfig } from '../policy-engine'
 import type { WorkOrderCategory } from '@prisma/client'
 import {
@@ -497,7 +497,7 @@ async function assignVendorStep(
       include: { tenant: { select: { userId: true } } },
     })
     if (activeLease?.tenant?.userId) {
-      await createNotification({
+      await deliverNotification({
         userId: activeLease.tenant.userId,
         title: 'Work order assigned',
         body: `Your maintenance request "${workOrder.title}" has been assigned and is being handled.`,
@@ -510,7 +510,7 @@ async function assignVendorStep(
 
   // Notify manager
   if (ctx.managerId) {
-    await createNotification({
+    await deliverNotification({
       userId: ctx.managerId,
       title: 'Agent: Work order auto-assigned',
       body: `WO "${workOrder.title}" was automatically assigned to a vendor.`,

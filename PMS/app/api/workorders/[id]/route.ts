@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
-import { createNotification } from '@/lib/notify'
-import { sendEmail, woStatusEmail } from '@/lib/email'
+import { deliverNotification } from '@/lib/deliver'
+import { woStatusEmail, woStatusSms } from '@/lib/email'
 import { workOrderScopeWhere } from '@/lib/access'
 import { sessionProvider } from '@/lib/session-provider'
 import { WorkOrderStatus } from '@prisma/client'
@@ -100,23 +100,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   // Notify submitter on status change (if different user)
   if (status && status !== workOrder.status && workOrder.submittedById !== session.user.id) {
-    await createNotification({
+    const propName = updated.property?.name ?? ''
+    await deliverNotification({
       userId: workOrder.submittedById,
       title: `Work order "${workOrder.title}" updated`,
       body: `Status changed to ${status.replace('_', ' ')}`,
       type: 'WO_STATUS',
       entityType: 'WorkOrder',
       entityId: params.id,
+      emailSubject: `Work order "${workOrder.title}" — ${status.replace('_', ' ')}`,
+      emailHtml: woStatusEmail(workOrder.title, status, propName),
+      smsBody: woStatusSms(workOrder.title, status, propName),
     })
-    // Email the submitter
-    const submitter = await prisma.user.findUnique({ where: { id: workOrder.submittedById }, select: { email: true } })
-    if (submitter) {
-      await sendEmail({
-        to: submitter.email,
-        subject: `Work order "${workOrder.title}" — ${status.replace('_', ' ')}`,
-        html: woStatusEmail(workOrder.title, status, updated.property?.name ?? ''),
-      })
-    }
   }
 
   return NextResponse.json(updated)

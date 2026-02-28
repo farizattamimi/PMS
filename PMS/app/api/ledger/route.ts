@@ -3,8 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
-import { createNotification } from '@/lib/notify'
-import { sendEmail, rentChargeEmail } from '@/lib/email'
+import { deliverNotification } from '@/lib/deliver'
+import { rentChargeEmail, rentChargeSms } from '@/lib/email'
 import { LedgerEntryType } from '@prisma/client'
 
 export async function GET(req: Request) {
@@ -96,19 +96,18 @@ export async function POST(req: Request) {
       include: { tenant: { include: { user: { select: { id: true, name: true, email: true } } } }, unit: { select: { unitNumber: true } } },
     })
     if (lease?.tenant?.user) {
-      const { id: tenantUserId, name, email } = lease.tenant.user
-      await createNotification({
+      const { id: tenantUserId, name } = lease.tenant.user
+      const unitNum = lease.unit?.unitNumber ?? ''
+      await deliverNotification({
         userId: tenantUserId,
         title: 'Rent charge posted',
         body: `$${parseFloat(amount).toLocaleString()} due on ${effectiveDate}`,
         type: 'PAYMENT_DUE',
         entityType: 'LedgerEntry',
         entityId: entry.id,
-      })
-      await sendEmail({
-        to: email,
-        subject: 'Rent charge posted to your account',
-        html: rentChargeEmail(name, parseFloat(amount), effectiveDate, lease.unit?.unitNumber ?? ''),
+        emailSubject: 'Rent charge posted to your account',
+        emailHtml: rentChargeEmail(name, parseFloat(amount), effectiveDate, unitNum),
+        smsBody: rentChargeSms(name, parseFloat(amount), effectiveDate, unitNum),
       })
     }
   }

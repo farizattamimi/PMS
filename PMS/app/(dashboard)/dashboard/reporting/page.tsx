@@ -179,6 +179,12 @@ export default function ReportingPage() {
             <Link href="/dashboard/reporting/benchmarks" className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
               <FileText className="h-4 w-4" /> Benchmarks →
             </Link>
+            <Link href="/dashboard/reporting/operating-statement" className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
+              <FileText className="h-4 w-4" /> Operating Statement →
+            </Link>
+            <Link href="/dashboard/reporting/accounting-export" className="flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
+              <FileText className="h-4 w-4" /> Accounting Export →
+            </Link>
           </div>
           </div>
 

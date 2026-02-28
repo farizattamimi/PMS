@@ -5,6 +5,7 @@ declare module 'next-auth' {
   interface User {
     systemRole: SystemRole
     id: string
+    orgId?: string | null
   }
 
   interface Session {
@@ -14,6 +15,7 @@ declare module 'next-auth' {
       email?: string | null
       image?: string | null
       systemRole: SystemRole
+      orgId: string | null
     }
   }
 }
@@ -22,5 +24,6 @@ declare module 'next-auth/jwt' {
   interface JWT {
     systemRole: SystemRole
     id: string
+    orgId?: string | null
   }
 }

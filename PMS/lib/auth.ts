@@ -49,6 +49,7 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           name: user.name,
           systemRole: user.systemRole,
+          orgId: user.orgId,
         }
       },
     }),
@@ -58,6 +59,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.systemRole = (user as any).systemRole
         token.id = user.id
+        token.orgId = (user as any).orgId ?? null
       }
       return token
     },
@@ -65,6 +67,7 @@ export const authOptions: NextAuthOptions = {
       if (token) {
         session.user.systemRole = token.systemRole as SystemRole
         session.user.id = token.id as string
+        session.user.orgId = (token.orgId as string) ?? null
       }
       return session
     },

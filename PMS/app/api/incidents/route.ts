@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { publishAgentEvent } from '@/lib/agent-events'
@@ -13,8 +12,10 @@ const SLA_HOURS: Record<string, number> = {
   LOW: 168, // 7 days
 }
 
+const VALID_SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
@@ -56,6 +57,10 @@ export async function POST(req: Request) {
 
   if (!propertyId || !category || !title || !description) {
     return NextResponse.json({ error: 'propertyId, category, title, and description are required' }, { status: 400 })
+  }
+
+  if (!VALID_SEVERITIES.includes(severity)) {
+    return NextResponse.json({ error: `severity must be one of: ${VALID_SEVERITIES.join(', ')}` }, { status: 400 })
   }
 
   const slaHours = SLA_HOURS[severity] ?? 72

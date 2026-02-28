@@ -1,17 +1,25 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const entry = await prisma.ledgerEntry.findUnique({ where: { id: params.id } })
+  const entry = await prisma.ledgerEntry.findUnique({
+    where: { id: params.id },
+    include: { lease: { select: { unit: { select: { propertyId: true } } } } },
+  })
   if (!entry) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const propertyId = entry.propertyId ?? entry.lease?.unit?.propertyId
+  if (propertyId && !(await assertManagerOwnsProperty(session, propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const body = await req.json()
   // Only memo and type can be updated after creation

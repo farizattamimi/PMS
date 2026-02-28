@@ -9,7 +9,7 @@
 //   4. Notifies the tenant that their request is being expedited
 
 import { prisma } from '../prisma'
-import { createNotification } from '../notify'
+import { deliverNotification } from '../deliver'
 import { evaluateAction } from '../policy-engine'
 import {
   startRun,
@@ -143,7 +143,7 @@ export async function runSLABreachAutopilot(data: TriggerData): Promise<void> {
       requiresBy: new Date(Date.now() + 4 * 60 * 60 * 1000), // respond within 4h
     })
 
-    await createNotification({
+    await deliverNotification({
       userId: wo.property.managerId,
       title: `SLA breach: ${wo.title}`,
       body: `${wo.property.name} · ${wo.priority} priority · ${hoursBreached}h past SLA deadline · Status: ${wo.status}`,
@@ -306,7 +306,7 @@ export async function runSLABreachAutopilot(data: TriggerData): Promise<void> {
 
       const tenantUserId = activeLease?.tenant?.userId
       if (tenantUserId) {
-        await createNotification({
+        await deliverNotification({
           userId: tenantUserId,
           title: `Update on your request: ${wo.title}`,
           body: reassigned

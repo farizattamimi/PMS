@@ -14,6 +14,24 @@ export function isTenant(session: Session): boolean {
   return session.user.systemRole === 'TENANT'
 }
 
+export function isVendor(session: Session): boolean {
+  return session.user.systemRole === 'VENDOR'
+}
+
+export function isOwner(session: Session): boolean {
+  return session.user.systemRole === 'OWNER'
+}
+
+/**
+ * Returns org-scoping filter. If user belongs to an org, restricts to that org.
+ * Platform super-admins (no org) see everything.
+ */
+export function orgScopeWhere(session: Session): { orgId?: string } {
+  const orgId = (session.user as any).orgId
+  if (orgId) return { orgId }
+  return {}
+}
+
 export function propertyScopeWhere(session: Session): Prisma.PropertyWhereInput {
   if (isAdmin(session)) return {}
   if (isManager(session)) return { managerId: session.user.id }
@@ -36,6 +54,38 @@ export function documentScopeWhere(session: Session): Prisma.DocumentWhereInput 
         { uploadedById: session.user.id },
       ],
     }
+  }
+  return null
+}
+
+export async function vendorIdForUser(userId: string): Promise<string | null> {
+  const vendor = await prisma.vendor.findUnique({
+    where: { userId },
+    select: { id: true },
+  })
+  return vendor?.id ?? null
+}
+
+export async function documentScopeWhereAsync(
+  session: Session
+): Promise<Prisma.DocumentWhereInput | null> {
+  if (isAdmin(session)) return {}
+  if (isManager(session)) {
+    return {
+      OR: [
+        { property: { managerId: session.user.id } },
+        { workOrder: { property: { managerId: session.user.id } } },
+        { uploadedById: session.user.id },
+      ],
+    }
+  }
+  if (isTenant(session)) {
+    return { workOrder: { submittedById: session.user.id } }
+  }
+  if (isVendor(session)) {
+    const vendorId = await vendorIdForUser(session.user.id)
+    if (!vendorId) return null
+    return { workOrder: { assignedVendorId: vendorId } }
   }
   return null
 }
@@ -88,4 +138,22 @@ export function canAccessScopedPropertyId(
   if (scopedPropertyIds === null) return true
   if (!propertyId) return false
   return scopedPropertyIds.includes(propertyId)
+}
+
+/**
+ * Returns true if the session user is allowed to manage the given property.
+ * ADMIN always passes. MANAGER passes only if they own the property.
+ * All other roles return false.
+ */
+export async function assertManagerOwnsProperty(
+  session: Session,
+  propertyId: string
+): Promise<boolean> {
+  if (isAdmin(session)) return true
+  if (!isManager(session)) return false
+  const property = await prisma.property.findUnique({
+    where: { id: propertyId },
+    select: { managerId: true },
+  })
+  return property?.managerId === session.user.id
 }

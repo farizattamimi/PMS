@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createNotification } from '@/lib/notify'
-import { sendEmail, leaseExpiringEmail } from '@/lib/email'
+import { deliverNotification } from '@/lib/deliver'
+import { leaseExpiringEmail, leaseExpiringSms } from '@/lib/email'
 import { validateCronSecret } from '@/lib/security'
 
 // Thresholds in days that trigger a notification
@@ -82,21 +82,16 @@ export async function GET(req: Request) {
     const propertyName = lease.unit.property.name
     const endDate = new Date(lease.endDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
-    // Create in-app notification
-    await createNotification({
+    await deliverNotification({
       userId,
       title: `Lease expiring in ${daysLeft} days`,
       body: `Your lease for Unit ${unitNumber} at ${propertyName} expires on ${endDate}. Contact your property manager about renewal.`,
       type: 'LEASE_EXPIRING',
       entityType: 'Lease',
       entityId: markerEntityId,
-    })
-
-    // Send email
-    await sendEmail({
-      to: lease.tenant.user.email,
-      subject: `Reminder: Your lease expires in ${daysLeft} days`,
-      html: leaseExpiringEmail(tenantName, unitNumber, propertyName, endDate, daysLeft),
+      emailSubject: `Reminder: Your lease expires in ${daysLeft} days`,
+      emailHtml: leaseExpiringEmail(tenantName, unitNumber, propertyName, endDate, daysLeft),
+      smsBody: leaseExpiringSms(tenantName, unitNumber, propertyName, endDate, daysLeft),
     })
 
     sent++
@@ -140,7 +135,7 @@ export async function GET(req: Request) {
         where: { userId: managerId, entityId: markerEntityId, createdAt: { gte: new Date(todayStr) } },
       })
       if (existingAlert) continue
-      await createNotification({
+      await deliverNotification({
         userId: managerId,
         title: `Vendor credential expiring: ${vendor.name}`,
         body: alerts.join(' · '),
@@ -179,7 +174,7 @@ export async function GET(req: Request) {
     })
     if (existingAlert) continue
 
-    await createNotification({
+    await deliverNotification({
       userId: item.property.managerId,
       title: isOverdue ? `Compliance overdue: ${item.title}` : `Compliance due in ${daysUntil} days: ${item.title}`,
       body: `${item.property.name} — ${item.category.replace(/_/g, ' ')}`,

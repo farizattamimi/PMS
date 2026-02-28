@@ -197,6 +197,7 @@ export default function ApplicationsPage() {
               <TableHeader>Property / Unit</TableHeader>
               <TableHeader>Desired Move-In</TableHeader>
               <TableHeader>Status</TableHeader>
+              {isManager && <TableHeader>Screening</TableHeader>}
               <TableHeader>Submitted</TableHeader>
               {isManager && <TableHeader></TableHeader>}
             </TableRow>
@@ -231,6 +232,25 @@ export default function ApplicationsPage() {
                     {STATUS_LABELS[app.status] ?? app.status}
                   </span>
                 </TableCell>
+                {isManager && (
+                  <TableCell>
+                    {(() => {
+                      const sr = app.screeningReports?.[0]
+                      if (!sr) return <span className="text-xs text-gray-400">Not run</span>
+                      const colors: Record<string, string> = {
+                        CLEAR: 'bg-green-50 text-green-700',
+                        FLAG: 'bg-yellow-50 text-yellow-700',
+                        FAIL: 'bg-red-50 text-red-700',
+                        PENDING: 'bg-gray-100 text-gray-500',
+                      }
+                      return (
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colors[sr.overallStatus] ?? colors.PENDING}`}>
+                          {sr.overallStatus}
+                        </span>
+                      )
+                    })()}
+                  </TableCell>
+                )}
                 <TableCell className="text-sm text-gray-500">
                   {formatDate(app.createdAt)}
                 </TableCell>

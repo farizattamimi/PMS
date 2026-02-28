@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { isManager } from '@/lib/access'
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -13,7 +13,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const vendor = await prisma.vendor.findUnique({
     where: { id: params.id },
     include: {
-      propertyVendors: { include: { property: { select: { id: true, name: true } } } },
+      propertyVendors: { include: { property: { select: { id: true, name: true, managerId: true } } } },
       workOrders: {
         orderBy: { createdAt: 'desc' },
         take: 10,
@@ -28,17 +28,40 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   })
 
   if (!vendor) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  // Manager can only see vendors linked to their properties
+  if (isManager(session)) {
+    const linkedToManaged = vendor.propertyVendors.some(
+      (pv: any) => pv.property?.managerId === session.user.id
+    )
+    if (!linkedToManaged) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
   return NextResponse.json(vendor)
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const vendor = await prisma.vendor.findUnique({ where: { id: params.id } })
+  const vendor = await prisma.vendor.findUnique({
+    where: { id: params.id },
+    include: { propertyVendors: { select: { property: { select: { managerId: true } } } } },
+  })
   if (!vendor) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (isManager(session)) {
+    const linkedToManaged = vendor.propertyVendors.some(
+      (pv: any) => pv.property?.managerId === session.user.id
+    )
+    if (!linkedToManaged) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
 
   const body = await req.json()
   const {

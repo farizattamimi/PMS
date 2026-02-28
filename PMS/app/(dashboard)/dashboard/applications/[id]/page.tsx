@@ -47,6 +47,14 @@ export default function ApplicationDetailPage({ params }: { params: { id: string
   })
   const [approveSaving, setApproveSaving] = useState(false)
 
+  // Screening
+  const [screening, setScreening] = useState(false)
+  const [screeningError, setScreeningError] = useState('')
+
+  // Approve modal extras
+  const [approveError, setApproveError] = useState('')
+  const [screeningOverride, setScreeningOverride] = useState(false)
+
   // Deny modal
   const [showDeny, setShowDeny] = useState(false)
   const [denyNotes, setDenyNotes] = useState('')
@@ -115,6 +123,7 @@ export default function ApplicationDetailPage({ params }: { params: { id: string
   async function handleApprove(e: React.FormEvent) {
     e.preventDefault()
     setApproveSaving(true)
+    setApproveError('')
     try {
       const res = await fetch(`/api/applications/${params.id}/approve`, {
         method: 'POST',
@@ -124,11 +133,15 @@ export default function ApplicationDetailPage({ params }: { params: { id: string
           approvedMoveIn: approveForm.approvedMoveIn,
           unitId: approveForm.unitId || undefined,
           createDraftLease: approveForm.createDraftLease,
+          ...(screeningOverride ? { screeningOverride: true } : {}),
         }),
       })
       if (res.ok) {
         const data = await res.json()
         router.push(`/dashboard/tenants/${data.tenantId}`)
+      } else {
+        const data = await res.json()
+        setApproveError(data.error ?? 'Approval failed')
       }
     } finally {
       setApproveSaving(false)
@@ -248,25 +261,148 @@ export default function ApplicationDetailPage({ params }: { params: { id: string
 
       {/* Screening */}
       <Card className="mb-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Screening</h3>
-        <div className="text-sm space-y-2 mb-3">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900">Screening</h3>
+          {canAct && (
+            <Button
+              variant="secondary"
+              disabled={screening}
+              onClick={async () => {
+                setScreening(true)
+                setScreeningError('')
+                try {
+                  const res = await fetch(`/api/applications/${params.id}/screen`, { method: 'POST' })
+                  if (!res.ok) {
+                    const d = await res.json()
+                    setScreeningError(d.error ?? 'Screening failed')
+                  } else {
+                    await load()
+                  }
+                } catch {
+                  setScreeningError('Network error')
+                } finally {
+                  setScreening(false)
+                }
+              }}
+            >
+              {screening ? 'Running...' : (app.screeningReports?.[0] ? 'Run Again' : 'Request Screening')}
+            </Button>
+          )}
+        </div>
+        {screeningError && (
+          <p className="text-sm text-red-600 mb-3">{screeningError}</p>
+        )}
+
+        {/* Screening Results */}
+        {app.screeningReports?.[0] && (() => {
+          const r = app.screeningReports[0]
+          const score = r.creditScore ?? 0
+          const pct = Math.min(100, Math.max(0, ((score - 300) / 550) * 100))
+          const scoreColor = score >= 700 ? 'bg-green-500' : score >= 620 ? 'bg-yellow-500' : 'bg-red-500'
+
+          const statusBadge = (status: string) => {
+            const colors: Record<string, string> = {
+              CLEAR: 'bg-green-50 text-green-700',
+              FLAG: 'bg-yellow-50 text-yellow-700',
+              FAIL: 'bg-red-50 text-red-700',
+              PENDING: 'bg-gray-100 text-gray-500',
+            }
+            return (
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colors[status] ?? colors.PENDING}`}>
+                {status}
+              </span>
+            )
+          }
+
+          const overallColors: Record<string, string> = {
+            CLEAR: 'text-green-700 bg-green-50 border-green-200',
+            FLAG: 'text-yellow-700 bg-yellow-50 border-yellow-200',
+            FAIL: 'text-red-700 bg-red-50 border-red-200',
+            PENDING: 'text-gray-600 bg-gray-50 border-gray-200',
+          }
+
+          return (
+            <div className="space-y-4 mb-4">
+              {/* Overall Status */}
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-semibold ${overallColors[r.overallStatus] ?? overallColors.PENDING}`}>
+                Overall: {r.overallStatus}
+              </div>
+
+              {/* Credit Score Gauge */}
+              {r.creditScore != null && (
+                <div>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-gray-600">Credit Score</span>
+                    <span className="font-semibold text-gray-900">{r.creditScore}</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2.5">
+                    <div className={`h-2.5 rounded-full ${scoreColor}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+                    <span>300</span>
+                    <span>850</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 4 Status Badges */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Credit</span>
+                    {statusBadge(r.creditStatus)}
+                  </div>
+                  {r.creditNotes && <p className="text-xs text-gray-500">{r.creditNotes}</p>}
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Background</span>
+                    {statusBadge(r.backgroundStatus)}
+                  </div>
+                  {r.backgroundNotes && <p className="text-xs text-gray-500">{r.backgroundNotes}</p>}
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Eviction</span>
+                    {statusBadge(r.evictionStatus)}
+                  </div>
+                  {r.evictionNotes && <p className="text-xs text-gray-500">{r.evictionNotes}</p>}
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Income</span>
+                    {statusBadge(r.incomeStatus)}
+                  </div>
+                  {r.incomeNotes && <p className="text-xs text-gray-500">{r.incomeNotes}</p>}
+                </div>
+              </div>
+
+              {r.completedAt && (
+                <p className="text-xs text-gray-400">Completed {formatDate(r.completedAt)}</p>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Review Notes */}
+        <div>
           {app.reviewedAt && (
-            <p className="text-gray-500 text-xs">
+            <p className="text-gray-500 text-xs mb-2">
               Reviewed {formatDate(app.reviewedAt)}
             </p>
           )}
+          <label className="block text-sm font-medium text-gray-700 mb-1">Review Notes</label>
+          <textarea
+            rows={3}
+            value={reviewNotes}
+            onChange={e => setReviewNotes(e.target.value)}
+            onBlur={handleReviewNotesSave}
+            disabled={app.status === 'APPROVED' || app.status === 'DENIED' || app.status === 'WITHDRAWN'}
+            placeholder="Add review notes..."
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
+          />
+          {saving && <p className="text-xs text-gray-400 mt-1">Saving...</p>}
         </div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Review Notes</label>
-        <textarea
-          rows={3}
-          value={reviewNotes}
-          onChange={e => setReviewNotes(e.target.value)}
-          onBlur={handleReviewNotesSave}
-          disabled={app.status === 'APPROVED' || app.status === 'DENIED' || app.status === 'WITHDRAWN'}
-          placeholder="Add screening notes…"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
-        />
-        {saving && <p className="text-xs text-gray-400 mt-1">Saving…</p>}
       </Card>
 
       {/* Action buttons */}
@@ -376,12 +512,34 @@ export default function ApplicationDetailPage({ params }: { params: { id: string
               />
               Create draft lease automatically
             </label>
+            {/* Screening override */}
+            {(() => {
+              const sr = app.screeningReports?.[0]
+              const needsOverride = !sr || sr.overallStatus === 'FAIL' || sr.overallStatus === 'FLAG'
+              if (!needsOverride) return null
+              return (
+                <label className="flex items-center gap-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={screeningOverride}
+                    onChange={e => setScreeningOverride(e.target.checked)}
+                    className="rounded border-yellow-400 text-yellow-600 focus:ring-yellow-500"
+                  />
+                  Override screening result
+                  {!sr && <span className="text-xs">(not yet run)</span>}
+                  {sr && <span className="text-xs">(status: {sr.overallStatus})</span>}
+                </label>
+              )
+            })()}
+            {approveError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{approveError}</p>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={() => setShowApprove(false)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={approveSaving}>
-                {approveSaving ? 'Approving…' : 'Approve & Create Tenant'}
+                {approveSaving ? 'Approving...' : 'Approve & Create Tenant'}
               </Button>
             </div>
           </form>

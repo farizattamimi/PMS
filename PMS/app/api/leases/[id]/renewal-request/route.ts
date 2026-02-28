@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createNotification } from '@/lib/notify'
+import { deliverNotification } from '@/lib/deliver'
 import { writeAudit } from '@/lib/audit'
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -57,7 +57,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const managerId = lease.unit?.property?.managerId
   const propertyName = lease.unit?.property?.name ?? 'Property'
   if (managerId) {
-    await createNotification({
+    await deliverNotification({
       userId: managerId,
       title: 'Tenant Renewal Request',
       body: `Tenant is requesting a ${termMonths}-month lease renewal for ${propertyName}.`,

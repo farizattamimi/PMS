@@ -1,13 +1,25 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { AgentActionStatus } from '@prisma/client'
+import { sessionProvider } from '@/lib/session-provider'
+import { checkRateLimit, rateLimitHeaders, resolveRateLimitKey } from '@/lib/rate-limit'
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole !== 'MANAGER') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const rate = await checkRateLimit({
+    bucket: 'agent-inbox-list',
+    key: resolveRateLimitKey(req, session.user.id),
+    limit: 120,
+    windowMs: 60_000,
+  })
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please retry shortly.' },
+      { status: 429, headers: rateLimitHeaders(rate) }
+    )
   }
 
   const { searchParams } = new URL(req.url)
@@ -33,5 +45,5 @@ export async function GET(req: Request) {
     take: 50,
   })
 
-  return NextResponse.json(actions)
+  return NextResponse.json(actions, { headers: rateLimitHeaders(rate) })
 }

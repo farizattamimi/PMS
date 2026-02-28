@@ -3,12 +3,13 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, Plus, X, Upload, FileText, Trash2, ExternalLink, Wand2 } from 'lucide-react'
+import { ChevronLeft, Plus, X, Upload, FileText, Trash2, ExternalLink, Wand2, PenTool, Download } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import Button from '@/components/ui/Button'
 import { UnitStatusBadge, LeaseStatusBadge, WorkOrderPriorityBadge, WorkOrderStatusBadge } from '@/components/ui/Badge'
 import { Modal } from '@/components/ui/Modal'
+import { SignaturePad } from '@/components/ui/SignaturePad'
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell, TableEmptyState } from '@/components/ui/Table'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
@@ -83,10 +84,15 @@ export default function PropertyDetailPage() {
   // Budgets
   const [budgets, setBudgets] = useState<any[]>([])
   const [budgetPeriod, setBudgetPeriod] = useState(new Date().toISOString().slice(0, 7))
-  const [financialsSubTab, setFinancialsSubTab] = useState<'ledger' | 'budget'>('ledger')
+  const [financialsSubTab, setFinancialsSubTab] = useState<'ledger' | 'budget' | 'late-fees'>('ledger')
   const [showBudgetModal, setShowBudgetModal] = useState(false)
   const [budgetForm, setBudgetForm] = useState({ category: 'RENT', budgetedAmount: '', notes: '' })
   const [savingBudget, setSavingBudget] = useState(false)
+
+  // Late fee policy
+  const [lateFeeForm, setLateFeeForm] = useState({ enabled: false, feeType: 'flat' as 'flat' | 'pct', flatAmount: '', pctValue: '', graceDays: '5' })
+  const [savingLateFee, setSavingLateFee] = useState(false)
+  const [lateFeeLoaded, setLateFeeLoaded] = useState(false)
 
   // Inspections
   const [inspections, setInspections] = useState<any[]>([])
@@ -115,6 +121,18 @@ export default function PropertyDetailPage() {
 
   // AI: renewal letter modal
   const [renewalLetterState, setRenewalLetterState] = useState<{ leaseId: string; text: string; generating: boolean; offeredRent: string; termMonths: string } | null>(null)
+
+  // Bulk renewal
+  const [selectedLeaseIds, setSelectedLeaseIds] = useState<Set<string>>(new Set())
+  const [showBulkRenewalModal, setShowBulkRenewalModal] = useState(false)
+  const [bulkRenewalForm, setBulkRenewalForm] = useState({ adjustmentType: 'pct' as 'pct' | 'flat', adjustmentValue: '', termMonths: '12', expiryDays: '14', notes: '' })
+  const [bulkRenewalSaving, setBulkRenewalSaving] = useState(false)
+  const [bulkRenewalResult, setBulkRenewalResult] = useState<{ sent: number; skipped: number } | null>(null)
+
+  // Lease signing + PDF
+  const [signLeaseId, setSignLeaseId] = useState<string | null>(null)
+  const [signingLease, setSigningLease] = useState(false)
+  const [generatingPdf, setGeneratingPdf] = useState<string | null>(null)
 
   // AI: cost forecast
   const [costForecast, setCostForecast] = useState('')
@@ -231,6 +249,18 @@ export default function PropertyDetailPage() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
+    if (property && !lateFeeLoaded) {
+      setLateFeeForm({
+        enabled: property.lateFeeEnabled ?? false,
+        feeType: property.lateFeeFlat != null ? 'flat' : 'pct',
+        flatAmount: property.lateFeeFlat != null ? String(property.lateFeeFlat) : '',
+        pctValue: property.lateFeePct != null ? String(property.lateFeePct) : '',
+        graceDays: String(property.gracePeriodDays ?? 5),
+      })
+      setLateFeeLoaded(true)
+    }
+  }, [property, lateFeeLoaded])
+  useEffect(() => {
     if (tab === 'vendors') fetch('/api/vendors').then(r => r.json()).then(setAllVendors)
     if (tab === 'documents') loadDocuments()
     if (tab === 'assets') { loadAssets(); loadPMSchedules() }
@@ -289,6 +319,27 @@ export default function PropertyDetailPage() {
     await fetch(`/api/leases/${leaseId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ACTIVE' }) }); load()
   }
 
+  async function handleSignLease(dataUrl: string) {
+    if (!signLeaseId) return
+    setSigningLease(true)
+    await fetch(`/api/leases/${signLeaseId}/sign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature: dataUrl }),
+    })
+    setSigningLease(false)
+    setSignLeaseId(null)
+    load()
+  }
+
+  async function handleGeneratePdf(leaseId: string) {
+    setGeneratingPdf(leaseId)
+    const res = await fetch(`/api/leases/${leaseId}/pdf`, { method: 'POST' })
+    const data = await res.json()
+    if (data.fileUrl) window.open(data.fileUrl, '_blank')
+    setGeneratingPdf(null)
+  }
+
   async function setUnitStatus(unitId: string, status: string) {
     await fetch(`/api/units/${unitId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); load()
   }
@@ -312,6 +363,18 @@ export default function PropertyDetailPage() {
 
   async function handleDeleteBudget(budgetId: string) {
     await fetch(`/api/budgets/${budgetId}`, { method: 'DELETE' }); loadBudgets()
+  }
+
+  async function handleSaveLateFee(e: React.FormEvent) {
+    e.preventDefault(); setSavingLateFee(true)
+    const body: Record<string, unknown> = {
+      lateFeeEnabled: lateFeeForm.enabled,
+      gracePeriodDays: parseInt(lateFeeForm.graceDays) || 5,
+      lateFeeFlat: lateFeeForm.feeType === 'flat' && lateFeeForm.flatAmount ? parseFloat(lateFeeForm.flatAmount) : null,
+      lateFeePct: lateFeeForm.feeType === 'pct' && lateFeeForm.pctValue ? parseFloat(lateFeeForm.pctValue) : null,
+    }
+    await fetch(`/api/properties/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    setSavingLateFee(false); load()
   }
 
   async function handleAddPM(e: React.FormEvent) {
@@ -349,6 +412,46 @@ export default function PropertyDetailPage() {
     e.preventDefault(); setSavingRenewal(true)
     await fetch(`/api/leases/${renewalLeaseId}/renewal-offer`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...renewalForm, offeredRent: parseFloat(renewalForm.offeredRent), termMonths: parseInt(renewalForm.termMonths) }) })
     setSavingRenewal(false); setRenewalLeaseId(null); setRenewalForm({ offeredRent: '', termMonths: '12', expiryDate: '', notes: '' })
+  }
+
+  function toggleLeaseSelection(leaseId: string) {
+    setSelectedLeaseIds(prev => {
+      const next = new Set(prev)
+      if (next.has(leaseId)) next.delete(leaseId)
+      else next.add(leaseId)
+      return next
+    })
+  }
+
+  function toggleAllActiveLeases() {
+    const activeIds = leases.filter((l: any) => l.status === 'ACTIVE').map((l: any) => l.id)
+    const allSelected = activeIds.every((id: string) => selectedLeaseIds.has(id))
+    if (allSelected) setSelectedLeaseIds(new Set())
+    else setSelectedLeaseIds(new Set(activeIds))
+  }
+
+  async function handleBulkRenewal(e: React.FormEvent) {
+    e.preventDefault()
+    setBulkRenewalSaving(true)
+    setBulkRenewalResult(null)
+    const res = await fetch('/api/leases/bulk-renewal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leaseIds: Array.from(selectedLeaseIds),
+        rentAdjustmentType: bulkRenewalForm.adjustmentType,
+        rentAdjustmentValue: parseFloat(bulkRenewalForm.adjustmentValue) || 0,
+        termMonths: parseInt(bulkRenewalForm.termMonths) || 12,
+        expiryDays: parseInt(bulkRenewalForm.expiryDays) || 14,
+        notes: bulkRenewalForm.notes || undefined,
+      }),
+    })
+    const data = await res.json()
+    setBulkRenewalSaving(false)
+    setBulkRenewalResult({ sent: data.sent ?? 0, skipped: data.skipped ?? 0 })
+    setSelectedLeaseIds(new Set())
+    setShowBulkRenewalModal(false)
+    load()
   }
 
   async function handleUploadDoc(e: React.FormEvent) {
@@ -468,9 +571,22 @@ export default function PropertyDetailPage() {
 
       {/* ── Leases ── */}
       {tab === 'leases' && (
+        <>
+        {bulkRenewalResult && (
+          <div className="mb-4 px-4 py-3 rounded-lg text-sm font-medium bg-green-50 text-green-800 border border-green-200">
+            Bulk renewal complete: {bulkRenewalResult.sent} offer{bulkRenewalResult.sent !== 1 ? 's' : ''} sent{bulkRenewalResult.skipped > 0 ? `, ${bulkRenewalResult.skipped} skipped` : ''}.
+          </div>
+        )}
+        {selectedLeaseIds.size > 0 && (
+          <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <span className="text-sm font-medium text-purple-800">{selectedLeaseIds.size} lease{selectedLeaseIds.size !== 1 ? 's' : ''} selected</span>
+            <button onClick={() => setShowBulkRenewalModal(true)} className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors">Bulk Renew</button>
+            <button onClick={() => setSelectedLeaseIds(new Set())} className="text-sm text-purple-600 hover:underline">Clear</button>
+          </div>
+        )}
         <Card padding="none">
           <Table>
-            <TableHead><TableRow><TableHeader>Tenant</TableHeader><TableHeader>Unit</TableHeader><TableHeader>Start</TableHeader><TableHeader>End</TableHeader><TableHeader>Rent</TableHeader><TableHeader>Status</TableHeader><TableHeader>AI Risk</TableHeader><TableHeader></TableHeader></TableRow></TableHead>
+            <TableHead><TableRow><TableHeader><input type="checkbox" checked={leases.filter((l: any) => l.status === 'ACTIVE').length > 0 && leases.filter((l: any) => l.status === 'ACTIVE').every((l: any) => selectedLeaseIds.has(l.id))} onChange={toggleAllActiveLeases} className="rounded border-gray-300" /></TableHeader><TableHeader>Tenant</TableHeader><TableHeader>Unit</TableHeader><TableHeader>Start</TableHeader><TableHeader>End</TableHeader><TableHeader>Rent</TableHeader><TableHeader>Status</TableHeader><TableHeader>AI Risk</TableHeader><TableHeader></TableHeader></TableRow></TableHead>
             <TableBody>
               {leases.length === 0 && <TableEmptyState message="No leases yet" />}
               {leases.map(l => {
@@ -478,6 +594,7 @@ export default function PropertyDetailPage() {
                 const rentSug = l.unitId ? rentSuggestions[l.unitId] : undefined
                 return (
                   <TableRow key={l.id}>
+                    <TableCell>{l.status === 'ACTIVE' ? <input type="checkbox" checked={selectedLeaseIds.has(l.id)} onChange={() => toggleLeaseSelection(l.id)} className="rounded border-gray-300" /> : null}</TableCell>
                     <TableCell className="font-medium">{l.tenant?.user?.name}</TableCell>
                     <TableCell className="text-gray-500">Unit {l.unit?.unitNumber}</TableCell>
                     <TableCell className="text-gray-500">{formatDate(l.startDate)}</TableCell>
@@ -507,10 +624,16 @@ export default function PropertyDetailPage() {
                       ) : <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         {l.status === 'DRAFT' && <button onClick={() => activateLease(l.id)} className="text-xs text-blue-600 hover:underline font-medium">Activate</button>}
                         {l.status === 'ACTIVE' && <button onClick={() => { setRenewalLeaseId(l.id); setRenewalForm({ offeredRent: String(l.monthlyRent), termMonths: '12', expiryDate: '', notes: '' }) }} className="text-xs text-purple-600 hover:underline font-medium">Renewal Offer</button>}
                         {l.status === 'ACTIVE' && <button onClick={() => handleDraftRenewalLetter(l.id, l.monthlyRent)} className="text-xs text-indigo-600 hover:underline font-medium flex items-center gap-0.5"><Wand2 className="h-2.5 w-2.5" />Draft Letter</button>}
+                        {!l.managerSignature ? (
+                          <button onClick={() => setSignLeaseId(l.id)} className="text-xs text-emerald-600 hover:underline font-medium flex items-center gap-0.5"><PenTool className="h-2.5 w-2.5" />Sign</button>
+                        ) : (
+                          <span className="text-xs text-emerald-600 font-medium flex items-center gap-0.5"><PenTool className="h-2.5 w-2.5" />Signed</span>
+                        )}
+                        <button onClick={() => handleGeneratePdf(l.id)} disabled={generatingPdf === l.id} className="text-xs text-gray-600 hover:underline font-medium flex items-center gap-0.5 disabled:opacity-50"><Download className="h-2.5 w-2.5" />{generatingPdf === l.id ? 'Generating…' : 'PDF'}</button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -519,6 +642,74 @@ export default function PropertyDetailPage() {
             </TableBody>
           </Table>
         </Card>
+        <Modal isOpen={!!signLeaseId} onClose={() => setSignLeaseId(null)} title="Sign Lease">
+          <SignaturePad
+            label="Draw your signature below to sign this lease as manager"
+            onSave={handleSignLease}
+            onCancel={() => setSignLeaseId(null)}
+          />
+          {signingLease && <p className="text-sm text-gray-400 mt-2 animate-pulse">Saving signature…</p>}
+        </Modal>
+        {/* Bulk renewal modal */}
+        {showBulkRenewalModal && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-900">Bulk Lease Renewal — {selectedLeaseIds.size} lease{selectedLeaseIds.size !== 1 ? 's' : ''}</h3>
+                <button onClick={() => setShowBulkRenewalModal(false)} className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></button>
+              </div>
+              <form onSubmit={handleBulkRenewal} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rent Adjustment</label>
+                  <div className="flex gap-2">
+                    <select className={INPUT_CLS + ' w-24'} value={bulkRenewalForm.adjustmentType} onChange={e => setBulkRenewalForm(f => ({ ...f, adjustmentType: e.target.value as 'pct' | 'flat' }))}>
+                      <option value="pct">%</option>
+                      <option value="flat">$ Flat</option>
+                    </select>
+                    <input className={INPUT_CLS} type="number" step="0.01" placeholder={bulkRenewalForm.adjustmentType === 'pct' ? 'e.g. 3 for 3%' : 'e.g. 50'} value={bulkRenewalForm.adjustmentValue} onChange={e => setBulkRenewalForm(f => ({ ...f, adjustmentValue: e.target.value }))} required />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">New Term (months)</label><input className={INPUT_CLS} type="number" min="1" value={bulkRenewalForm.termMonths} onChange={e => setBulkRenewalForm(f => ({ ...f, termMonths: e.target.value }))} required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Offer Expires In (days)</label><input className={INPUT_CLS} type="number" min="1" value={bulkRenewalForm.expiryDays} onChange={e => setBulkRenewalForm(f => ({ ...f, expiryDays: e.target.value }))} required /></div>
+                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label><textarea className={INPUT_CLS} rows={2} value={bulkRenewalForm.notes} onChange={e => setBulkRenewalForm(f => ({ ...f, notes: e.target.value }))} /></div>
+
+                {/* Preview */}
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">Preview</p>
+                  <div className="max-h-36 overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50"><tr><th className="px-3 py-1.5 text-left">Tenant</th><th className="px-3 py-1.5 text-left">Unit</th><th className="px-3 py-1.5 text-right">Current</th><th className="px-3 py-1.5 text-right">New Rent</th></tr></thead>
+                      <tbody>
+                        {leases.filter((l: any) => selectedLeaseIds.has(l.id)).map((l: any) => {
+                          const adj = parseFloat(bulkRenewalForm.adjustmentValue) || 0
+                          const newRent = bulkRenewalForm.adjustmentType === 'pct'
+                            ? Math.round(l.monthlyRent * (1 + adj / 100) * 100) / 100
+                            : Math.round((l.monthlyRent + adj) * 100) / 100
+                          return (
+                            <tr key={l.id} className="border-t border-gray-100">
+                              <td className="px-3 py-1.5">{l.tenant?.user?.name}</td>
+                              <td className="px-3 py-1.5">{l.unit?.unitNumber}</td>
+                              <td className="px-3 py-1.5 text-right">{formatCurrency(l.monthlyRent)}</td>
+                              <td className="px-3 py-1.5 text-right font-medium text-purple-700">{formatCurrency(newRent)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-1">
+                  <button type="button" onClick={() => setShowBulkRenewalModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                  <button type="submit" disabled={bulkRenewalSaving} className="px-4 py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors">{bulkRenewalSaving ? 'Sending…' : `Send ${selectedLeaseIds.size} Offer${selectedLeaseIds.size !== 1 ? 's' : ''}`}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {/* ── Financials ── */}
@@ -560,8 +751,8 @@ export default function PropertyDetailPage() {
 
           {/* Sub-tabs */}
           <div className="flex gap-4 border-b border-gray-200 mb-4">
-            {(['ledger', 'budget'] as const).map(t => (
-              <button key={t} onClick={() => setFinancialsSubTab(t)} className={`pb-2 text-sm font-medium border-b-2 transition-colors capitalize ${financialsSubTab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{t === 'ledger' ? 'Ledger Entries' : 'Budget'}</button>
+            {(['ledger', 'budget', 'late-fees'] as const).map(t => (
+              <button key={t} onClick={() => setFinancialsSubTab(t)} className={`pb-2 text-sm font-medium border-b-2 transition-colors capitalize ${financialsSubTab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{t === 'ledger' ? 'Ledger Entries' : t === 'budget' ? 'Budget' : 'Late Fee Policy'}</button>
             ))}
           </div>
           {financialsSubTab === 'ledger' && <div className="flex justify-end mb-4"><Button onClick={() => setShowLedgerModal(true)}><Plus className="h-4 w-4 mr-2" /> Add Entry</Button></div>}
@@ -611,6 +802,53 @@ export default function PropertyDetailPage() {
                   })}
                 </TableBody>
               </Table>
+            </Card>
+          )}
+
+          {financialsSubTab === 'late-fees' && (
+            <Card>
+              <h3 className="font-semibold text-gray-900 mb-4">Late Fee Policy</h3>
+              <form onSubmit={handleSaveLateFee} className="space-y-4 max-w-md">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input type="checkbox" checked={lateFeeForm.enabled} onChange={e => setLateFeeForm({ ...lateFeeForm, enabled: e.target.checked })} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-sm font-medium text-gray-700">Enable automatic late fee assessment</span>
+                </label>
+                {lateFeeForm.enabled && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Fee Type</label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="feeType" value="flat" checked={lateFeeForm.feeType === 'flat'} onChange={() => setLateFeeForm({ ...lateFeeForm, feeType: 'flat' })} className="text-blue-600 focus:ring-blue-500" />
+                          <span className="text-sm text-gray-700">Flat amount</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="feeType" value="pct" checked={lateFeeForm.feeType === 'pct'} onChange={() => setLateFeeForm({ ...lateFeeForm, feeType: 'pct' })} className="text-blue-600 focus:ring-blue-500" />
+                          <span className="text-sm text-gray-700">Percentage of rent</span>
+                        </label>
+                      </div>
+                    </div>
+                    {lateFeeForm.feeType === 'flat' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Flat Fee Amount ($)</label>
+                        <input type="number" step="0.01" min="0" className={INPUT_CLS} value={lateFeeForm.flatAmount} onChange={e => setLateFeeForm({ ...lateFeeForm, flatAmount: e.target.value })} placeholder="50.00" required />
+                      </div>
+                    )}
+                    {lateFeeForm.feeType === 'pct' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Percentage of Monthly Rent (%)</label>
+                        <input type="number" step="0.1" min="0" max="100" className={INPUT_CLS} value={lateFeeForm.pctValue} onChange={e => setLateFeeForm({ ...lateFeeForm, pctValue: e.target.value })} placeholder="5.0" required />
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Grace Period (days after 1st)</label>
+                      <input type="number" min="0" max="28" className={INPUT_CLS} value={lateFeeForm.graceDays} onChange={e => setLateFeeForm({ ...lateFeeForm, graceDays: e.target.value })} required />
+                      <p className="text-xs text-gray-400 mt-1">Late fees will be assessed after this many days past the 1st of each month.</p>
+                    </div>
+                  </>
+                )}
+                <Button type="submit" disabled={savingLateFee}>{savingLateFee ? 'Saving…' : 'Save Late Fee Policy'}</Button>
+              </form>
             </Card>
           )}
 

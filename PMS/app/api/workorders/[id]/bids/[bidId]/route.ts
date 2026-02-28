@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createNotification } from '@/lib/notify'
+import { deliverNotification } from '@/lib/deliver'
 import { writeAudit } from '@/lib/audit'
 import { workOrderScopeWhere } from '@/lib/access'
 
@@ -56,7 +56,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; bi
     })
 
     // Notify the manager
-    await createNotification({
+    await deliverNotification({
       userId: bid.workOrder.property.managerId,
       title: `Bid accepted: ${bid.vendor.name}`,
       body: `Vendor ${bid.vendor.name} accepted for WO: ${bid.workOrder.title}`,

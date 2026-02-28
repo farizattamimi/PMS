@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function GET(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -36,7 +36,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -46,6 +46,10 @@ export async function POST(req: Request) {
 
   if (!propertyId || !title || !category || !dueDate) {
     return NextResponse.json({ error: 'propertyId, title, category, dueDate required' }, { status: 400 })
+  }
+
+  if (!(await assertManagerOwnsProperty(session, propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const item = await prisma.complianceItem.create({

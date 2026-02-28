@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { messageThreadScopeWhere } from '@/lib/access'
 import { publishAgentEvent } from '@/lib/agent-events'
+import { deliverNotification } from '@/lib/deliver'
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
@@ -57,26 +58,22 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // Notify the other party
   const isManager = session.user.systemRole !== 'TENANT'
   if (isManager) {
-    await prisma.notification.create({
-      data: {
-        userId: thread.tenant.user.id,
-        title: `New message from your property manager`,
-        body: body.message.trim().slice(0, 100),
-        type: 'GENERAL',
-        entityType: 'MessageThread',
-        entityId: params.id,
-      },
+    await deliverNotification({
+      userId: thread.tenant.user.id,
+      title: `New message from your property manager`,
+      body: body.message.trim().slice(0, 100),
+      type: 'GENERAL',
+      entityType: 'MessageThread',
+      entityId: params.id,
     })
   } else {
-    await prisma.notification.create({
-      data: {
-        userId: thread.property.managerId,
-        title: `New message from ${thread.tenant.user.name}`,
-        body: body.message.trim().slice(0, 100),
-        type: 'GENERAL',
-        entityType: 'MessageThread',
-        entityId: params.id,
-      },
+    await deliverNotification({
+      userId: thread.property.managerId,
+      title: `New message from ${thread.tenant.user.name}`,
+      body: body.message.trim().slice(0, 100),
+      type: 'GENERAL',
+      entityType: 'MessageThread',
+      entityId: params.id,
     })
   }
 

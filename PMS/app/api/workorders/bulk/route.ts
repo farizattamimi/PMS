@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
-import { createNotification } from '@/lib/notify'
+import { deliverNotification } from '@/lib/deliver'
 
 /**
  * POST /api/workorders/bulk
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
 
   // Notify manager (if another manager created on their behalf — or self-notify for awareness)
   if (workOrderIds.length > 0) {
-    await createNotification({
+    await deliverNotification({
       userId:     property.managerId,
       title:      `${workOrderIds.length} work order${workOrderIds.length !== 1 ? 's' : ''} bulk-created`,
       body:       `"${template.title}" — ${property.name}`,

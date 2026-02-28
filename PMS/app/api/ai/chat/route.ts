@@ -6,6 +6,8 @@ import { anthropic, AI_MODEL, streamResponse } from '@/lib/ai'
 import { WorkOrderStatus } from '@prisma/client'
 import Anthropic from '@anthropic-ai/sdk'
 import { executeAction, runAgentForManager } from '@/lib/agent'
+import { checkRateLimit, rateLimitHeaders, resolveRateLimitKey } from '@/lib/rate-limit'
+import { acquireActionExecutionLock, releaseActionExecutionLock } from '@/lib/action-execution-lock'
 
 // ── Tool definitions ─────────────────────────────────────────────────────────
 
@@ -27,7 +29,7 @@ const TENANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'make_payment',
-    description: "Record a rent payment for the tenant. Only call this after the tenant has explicitly confirmed the payment amount.",
+    description: "Create a Stripe payment link for the tenant. Only call this after the tenant has explicitly confirmed the payment amount. Returns a checkout URL the tenant must visit to complete payment.",
     input_schema: {
       type: 'object',
       properties: {
@@ -161,21 +163,57 @@ async function executeTool(
       if (!leaseId) return { error: 'No active lease found' }
       const rawAmount = input.amount
       if (typeof rawAmount !== 'number' || rawAmount <= 0) return { error: 'Invalid payment amount' }
-      const entry = await prisma.ledgerEntry.create({
-        data: {
-          leaseId,
-          type: 'RENT',
-          amount: -rawAmount, // negative = payment/credit
-          currency: 'USD',
-          effectiveDate: new Date(),
-          memo: typeof input.memo === 'string' && input.memo ? input.memo : 'Tenant payment via AI assistant',
+
+      // Create a Stripe Checkout Session instead of a direct ledger entry
+      const { stripe } = await import('@/lib/stripe')
+      const tenant = await prisma.tenant.findUnique({
+        where: { userId },
+        include: {
+          leases: {
+            where: { status: 'ACTIVE' },
+            include: { unit: { include: { property: { select: { id: true, name: true } } } } },
+            take: 1,
+          },
         },
       })
+      const lease = tenant?.leases[0]
+      if (!lease) return { error: 'No active lease found' }
+
+      const origin = process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
+      const memo = typeof input.memo === 'string' && input.memo ? input.memo : 'Tenant payment via AI assistant'
+
+      const checkoutSession = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              unit_amount: Math.round(rawAmount * 100),
+              product_data: {
+                name: `Rent Payment — ${lease.unit.property.name}`,
+                description: memo,
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          leaseId: lease.id,
+          propertyId: lease.unit.propertyId,
+          tenantUserId: userId,
+          tenantId: tenant!.id,
+          memo,
+          amountDollars: String(rawAmount),
+        },
+        success_url: `${origin}/dashboard/my-payments?payment=success`,
+        cancel_url: `${origin}/dashboard/my-payments?payment=cancelled`,
+      })
+
       return {
-        success: true,
-        paymentId: entry.id,
-        amount: rawAmount,
-        date: new Date().toISOString().split('T')[0],
+        checkoutUrl: checkoutSession.url,
+        message: `Click the link below to complete your $${rawAmount.toFixed(2)} payment securely via Stripe.`,
+        instructions: 'Please open this link to proceed with payment. Your account will be updated once payment is confirmed.',
       }
     }
 
@@ -279,8 +317,8 @@ async function executeTool(
       const managerId = offer.lease.unit?.property?.managerId
       const propertyName = offer.lease.unit?.property?.name ?? 'Property'
       if (managerId) {
-        const { createNotification } = await import('@/lib/notify')
-        await createNotification({
+        const { deliverNotification } = await import('@/lib/deliver')
+        await deliverNotification({
           userId: managerId,
           title: 'Renewal offer accepted',
           body: `Tenant accepted the renewal offer for ${propertyName}. Lease extended to ${newEndDate.toLocaleDateString()}.`,
@@ -316,8 +354,8 @@ async function executeTool(
       const managerId = lease.unit?.property?.managerId
       const propertyName = lease.unit?.property?.name ?? 'Property'
       if (managerId) {
-        const { createNotification } = await import('@/lib/notify')
-        await createNotification({
+        const { deliverNotification } = await import('@/lib/deliver')
+        await deliverNotification({
           userId: managerId,
           title: 'Tenant Renewal Request',
           body: `Tenant is requesting a ${termMonths}-month lease renewal for ${propertyName}.`,
@@ -339,12 +377,26 @@ async function executeTool(
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const rate = await checkRateLimit({
+    bucket: 'ai-chat',
+    key: resolveRateLimitKey(req, session.user.id),
+    limit: 40,
+    windowMs: 60_000,
+  })
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please retry shortly.' },
+      { status: 429, headers: rateLimitHeaders(rate) }
+    )
+  }
 
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: 'AI not configured' }, { status: 503 })
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'AI not configured' }, { status: 503, headers: rateLimitHeaders(rate) })
+  }
 
   const { messages } = await req.json()
   if (!Array.isArray(messages) || messages.length === 0) {
-    return NextResponse.json({ error: 'messages array required' }, { status: 400 })
+    return NextResponse.json({ error: 'messages array required' }, { status: 400, headers: rateLimitHeaders(rate) })
   }
 
   // ── Tenant: agentic loop with tools ────────────────────────────────────────
@@ -554,17 +606,49 @@ Guidelines:
         if (!action) return { error: 'Action not found' }
         if (action.managerId !== managerId) return { error: 'Forbidden' }
         if (action.status !== 'PENDING_APPROVAL') return { error: `Action is already ${action.status}` }
-        const execResult = await executeAction(action, managerId)
-        await prisma.agentAction.update({
-          where: { id: actionId },
-          data: {
-            status: execResult.ok ? 'APPROVED' : 'FAILED',
-            result: execResult as any,
-            executedAt: new Date(),
-            respondedAt: new Date(),
-          },
-        })
-        return { actionId, ...execResult }
+        const actionLock = await acquireActionExecutionLock(actionId)
+        if (!actionLock) return { error: 'Action is already being handled' }
+        try {
+          const claimAt = new Date()
+          const claim = await prisma.agentAction.updateMany({
+            where: {
+              id: actionId,
+              managerId,
+              status: 'PENDING_APPROVAL',
+              respondedAt: null,
+            },
+            data: {
+              respondedAt: claimAt,
+              result: { processing: true, claimAt: claimAt.toISOString() } as any,
+            },
+          })
+          if (claim.count !== 1) return { error: 'Action is already being handled' }
+
+          let execResult: any
+          try {
+            execResult = await executeAction(action, managerId)
+          } catch (err: any) {
+            execResult = { ok: false, error: err?.message ?? 'Execution failed' }
+          }
+
+          await prisma.agentAction.updateMany({
+            where: {
+              id: actionId,
+              managerId,
+              status: 'PENDING_APPROVAL',
+              respondedAt: claimAt,
+            },
+            data: {
+              status: execResult.ok ? 'APPROVED' : 'FAILED',
+              result: execResult as any,
+              executedAt: new Date(),
+            },
+          })
+
+          return { actionId, ...execResult }
+        } finally {
+          await releaseActionExecutionLock(actionLock)
+        }
       }
 
       case 'get_unread_messages': {

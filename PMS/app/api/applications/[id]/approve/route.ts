@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { sessionProvider } from '@/lib/session-provider'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
-import { createNotification } from '@/lib/notify'
+import { deliverNotification } from '@/lib/deliver'
+import { createOnboardingChecklist } from '@/lib/onboarding'
+import { welcomeEmail, welcomeSms } from '@/lib/email'
+import { assertManagerOwnsProperty } from '@/lib/access'
 import bcrypt from 'bcryptjs'
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession(authOptions)
+  const session = await sessionProvider.getSession()
   if (!session || session.user.systemRole === 'TENANT') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -16,15 +18,41 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     where: { id: params.id },
   })
   if (!application) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (!(await assertManagerOwnsProperty(session, application.propertyId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   if (application.status === 'APPROVED') {
     return NextResponse.json({ error: 'Application already approved' }, { status: 400 })
   }
 
   const body = await req.json()
-  const { approvedRent, approvedMoveIn, unitId, createDraftLease } = body
+  const { approvedRent, approvedMoveIn, unitId, createDraftLease, screeningOverride } = body
 
   if (!approvedRent || !approvedMoveIn) {
     return NextResponse.json({ error: 'approvedRent and approvedMoveIn required' }, { status: 400 })
+  }
+
+  // Screening gate — require screening unless overridden
+  if (!screeningOverride) {
+    const latestReport = await prisma.screeningReport.findFirst({
+      where: { applicationId: params.id },
+      orderBy: { createdAt: 'desc' },
+      select: { overallStatus: true },
+    })
+    if (!latestReport) {
+      return NextResponse.json(
+        { error: 'Screening not run. Set screeningOverride=true to bypass.' },
+        { status: 400 },
+      )
+    }
+    if (latestReport.overallStatus === 'FAIL') {
+      return NextResponse.json(
+        { error: 'Screening failed. Set screeningOverride=true to bypass.' },
+        { status: 400 },
+      )
+    }
   }
 
   // Create User account
@@ -88,8 +116,39 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     leaseId = lease.id
   }
 
+  // Auto-create onboarding checklist if lease was created
+  let onboardingId: string | null = null
+  if (leaseId) {
+    try {
+      const checklist = await createOnboardingChecklist(leaseId)
+      onboardingId = checklist.id
+    } catch { /* checklist may already exist */ }
+  }
+
+  // Send welcome notification + email to new tenant
+  const property = await prisma.property.findUnique({ where: { id: application.propertyId }, select: { name: true } })
+  const unitInfo = effectiveUnitId ? await prisma.unit.findUnique({ where: { id: effectiveUnitId }, select: { unitNumber: true } }) : null
+  await deliverNotification({
+    userId: user.id,
+    title: `Welcome to ${property?.name ?? 'your new home'}!`,
+    body: 'Your tenant account is ready. Please complete your move-in checklist.',
+    type: 'GENERAL',
+    entityType: 'OnboardingChecklist',
+    entityId: onboardingId ?? undefined,
+    emailSubject: `Welcome to ${property?.name ?? 'your new home'}!`,
+    emailHtml: welcomeEmail(
+      `${application.firstName} ${application.lastName}`,
+      property?.name ?? 'your property',
+      unitInfo?.unitNumber ?? '',
+    ),
+    smsBody: welcomeSms(
+      application.firstName,
+      property?.name ?? 'your property',
+    ),
+  })
+
   // Notify the manager
-  await createNotification({
+  await deliverNotification({
     userId: session.user.id,
     title: `Application approved: ${application.firstName} ${application.lastName}`,
     body: `Tenant account created. ${leaseId ? 'Draft lease ready for review.' : ''}`,
@@ -103,7 +162,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     action: 'STATUS_CHANGE',
     entityType: 'TenantApplication',
     entityId: params.id,
-    diff: { status: 'APPROVED', tenantId: tenant.id, leaseId },
+    diff: { status: 'APPROVED', tenantId: tenant.id, leaseId, ...(screeningOverride ? { screeningOverride: true } : {}) },
   })
 
   return NextResponse.json({ tenantId: tenant.id, leaseId })
