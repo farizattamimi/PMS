@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
 import { normalizeManagerPropertyIds } from '@/lib/security'
+import { orgScopeWhere } from '@/lib/access'
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions)
@@ -47,8 +48,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (effectiveRole === 'MANAGER' && Array.isArray(propertyIds) && propertyIds.length > 0) {
     const uniquePropertyIds = normalizeManagerPropertyIds(propertyIds)
     if (uniquePropertyIds.length > 0) {
+      const orgScope = orgScopeWhere(session)
       await prisma.property.updateMany({
-        where: { id: { in: uniquePropertyIds } },
+        where: { id: { in: uniquePropertyIds }, ...orgScope },
         data: { managerId: params.id },
       })
     }

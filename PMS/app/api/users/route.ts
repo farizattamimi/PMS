@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { writeAudit } from '@/lib/audit'
+import { orgScopeWhere } from '@/lib/access'
 import bcrypt from 'bcryptjs'
 
 export async function GET() {
@@ -53,10 +54,11 @@ export async function POST(req: Request) {
     data: { name, email, passwordHash, systemRole },
   })
 
-  // Assign as manager of selected properties if MANAGER role
+  // Assign as manager of selected properties if MANAGER role (scoped to org)
   if (systemRole === 'MANAGER' && Array.isArray(propertyIds) && propertyIds.length > 0) {
+    const orgScope = orgScopeWhere(session)
     await prisma.property.updateMany({
-      where: { id: { in: propertyIds } },
+      where: { id: { in: propertyIds }, ...orgScope },
       data: { managerId: user.id },
     })
   }

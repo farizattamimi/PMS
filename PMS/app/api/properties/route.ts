@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       city,
       state,
       zip,
-      managerId: managerId ?? session.user.id,
+      managerId: session.user.systemRole === 'MANAGER' ? session.user.id : (managerId ?? session.user.id),
       propertyType: propertyType ?? 'MULTIFAMILY',
       status: status ?? 'ACTIVE',
     },

@@ -6,6 +6,7 @@ import { writeAudit } from '@/lib/audit'
 import { deliverNotification } from '@/lib/deliver'
 import { rentChargeEmail, rentChargeSms } from '@/lib/email'
 import { LedgerEntryType } from '@prisma/client'
+import { assertManagerOwnsProperty } from '@/lib/access'
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
@@ -71,10 +72,25 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json()
-  const { leaseId, propertyId, type, amount, effectiveDate, memo, currency } = body
+  let { leaseId, propertyId, type, amount, effectiveDate, memo, currency } = body
 
   if (!type || amount == null || !effectiveDate) {
     return NextResponse.json({ error: 'Missing required fields: type, amount, effectiveDate' }, { status: 400 })
+  }
+
+  // Resolve propertyId from lease if not provided, then verify ownership
+  if (leaseId && !propertyId) {
+    const lease = await prisma.lease.findUnique({
+      where: { id: leaseId },
+      select: { unit: { select: { propertyId: true } } },
+    })
+    if (!lease) return NextResponse.json({ error: 'Lease not found' }, { status: 404 })
+    propertyId = lease.unit.propertyId
+  }
+  if (propertyId) {
+    if (!(await assertManagerOwnsProperty(session, propertyId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
   }
 
   const entry = await prisma.ledgerEntry.create({

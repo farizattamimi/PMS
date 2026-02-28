@@ -27,6 +27,16 @@ export async function POST(
     select: { id: true, name: true, email: true, userId: true },
   })
   if (!vendor) return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
+
+  // MANAGER can only invite vendors that serve their properties
+  if (session.user.systemRole === 'MANAGER') {
+    const linked = await prisma.propertyVendor.findFirst({
+      where: { vendorId: params.id, property: { managerId: session.user.id } },
+    })
+    if (!linked) {
+      return NextResponse.json({ error: 'Forbidden — vendor not associated with your properties' }, { status: 403 })
+    }
+  }
   if (vendor.userId) {
     return NextResponse.json({ error: 'Vendor already has a portal account' }, { status: 409 })
   }
@@ -87,6 +97,16 @@ export async function DELETE(
   const session = await sessionProvider.getSession()
   if (!session || !['ADMIN', 'MANAGER'].includes(session.user.systemRole)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // MANAGER can only revoke vendors that serve their properties
+  if (session.user.systemRole === 'MANAGER') {
+    const linked = await prisma.propertyVendor.findFirst({
+      where: { vendorId: params.id, property: { managerId: session.user.id } },
+    })
+    if (!linked) {
+      return NextResponse.json({ error: 'Forbidden — vendor not associated with your properties' }, { status: 403 })
+    }
   }
 
   await prisma.vendor.update({
